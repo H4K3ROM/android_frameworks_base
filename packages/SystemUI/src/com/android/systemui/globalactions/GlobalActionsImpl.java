@@ -41,26 +41,23 @@ import com.android.systemui.statusbar.policy.KeyguardStateController;
 
 import javax.inject.Inject;
 
-import dagger.Lazy;
-
 public class GlobalActionsImpl implements GlobalActions, CommandQueue.Callbacks {
 
     private final Context mContext;
-    private final Lazy<GlobalActionsDialogLite> mGlobalActionsDialogLazy;
     private final KeyguardStateController mKeyguardStateController;
     private final DeviceProvisionedController mDeviceProvisionedController;
     private final BlurUtils mBlurUtils;
     private final CommandQueue mCommandQueue;
-    private GlobalActionsDialogLite mGlobalActionsDialog;
+    private final GlobalActionsDialogLite mGlobalActionsDialog;
     private boolean mDisabled;
 
     @Inject
     public GlobalActionsImpl(Context context, CommandQueue commandQueue,
-            Lazy<GlobalActionsDialogLite> globalActionsDialogLazy, BlurUtils blurUtils,
+            GlobalActionsDialogLite globalActionsDialog, BlurUtils blurUtils,
             KeyguardStateController keyguardStateController,
             DeviceProvisionedController deviceProvisionedController) {
         mContext = context;
-        mGlobalActionsDialogLazy = globalActionsDialogLazy;
+        mGlobalActionsDialog = globalActionsDialog;
         mKeyguardStateController = keyguardStateController;
         mDeviceProvisionedController = deviceProvisionedController;
         mCommandQueue = commandQueue;
@@ -71,22 +68,18 @@ public class GlobalActionsImpl implements GlobalActions, CommandQueue.Callbacks 
     @Override
     public void destroy() {
         mCommandQueue.removeCallback(this);
-        if (mGlobalActionsDialog != null) {
-            mGlobalActionsDialog.destroy();
-            mGlobalActionsDialog = null;
-        }
+        mGlobalActionsDialog.destroy();
     }
 
     @Override
     public void showGlobalActions(GlobalActionsManager manager) {
         if (mDisabled) return;
-        mGlobalActionsDialog = mGlobalActionsDialogLazy.get();
         mGlobalActionsDialog.showOrHideDialog(mKeyguardStateController.isShowing(),
                 mDeviceProvisionedController.isDeviceProvisioned(), null /* view */);
     }
 
     @Override
-    public void showShutdownUi(boolean isReboot, String reason, boolean rebootCustom) {
+    public void showShutdownUi(boolean isReboot, String reason, boolean advancedReboot) {
         ScrimDrawable background = new ScrimDrawable();
 
         final Dialog d = new Dialog(mContext,
@@ -150,8 +143,8 @@ public class GlobalActionsImpl implements GlobalActions, CommandQueue.Callbacks 
         reasonView.setTextColor(color);
         messageView.setTextColor(color);
 
-        messageView.setText(getRebootMessage(isReboot, reason, rebootCustom));
-        String rebootReasonMessage = getReasonMessage(reason, rebootCustom);
+        messageView.setText(getRebootMessage(isReboot, reason, advancedReboot));
+        String rebootReasonMessage = getReasonMessage(reason, advancedReboot);
         if (rebootReasonMessage != null) {
             reasonView.setVisibility(View.VISIBLE);
             reasonView.setText(rebootReasonMessage);
@@ -165,17 +158,13 @@ public class GlobalActionsImpl implements GlobalActions, CommandQueue.Callbacks 
         if (reason != null && reason.startsWith(PowerManager.REBOOT_RECOVERY_UPDATE)) {
             return R.string.reboot_to_update_reboot;
         } else if (reason != null && !custom && reason.equals(PowerManager.REBOOT_RECOVERY)) {
-            return com.android.systemui.R.string.global_action_restart_progress;
+            return R.string.reboot_to_recovery_message;
         } else if (reason != null && reason.equals(PowerManager.REBOOT_RECOVERY)) {
-            return com.android.systemui.R.string.global_action_restart_recovery_progress;
+            return com.android.internal.R.string.reboot_to_recovery_message;
         } else if (reason != null && reason.equals(PowerManager.REBOOT_BOOTLOADER)) {
-            return com.android.systemui.R.string.global_action_restart_bootloader_progress;
-        } else if (reason != null && reason.equals(PowerManager.REBOOT_DOWNLOAD)) {
-            return com.android.systemui.R.string.global_action_restart_download_progress;
-        } else if (reason != null && reason.equals(PowerManager.REBOOT_FASTBOOT)) {
-            return com.android.systemui.R.string.global_action_restart_fastboot_progress;
+            return R.string.reboot_to_bootloader_message;
         } else if (isReboot) {
-            return com.android.systemui.R.string.global_action_restart_progress;
+            return R.string.reboot_message;
         } else {
             return R.string.shutdown_progress;
         }
@@ -185,8 +174,6 @@ public class GlobalActionsImpl implements GlobalActions, CommandQueue.Callbacks 
     private String getReasonMessage(@Nullable String reason, boolean custom) {
         if (reason != null && reason.startsWith(PowerManager.REBOOT_RECOVERY_UPDATE)) {
             return mContext.getString(R.string.reboot_to_update_title);
-        } else if (reason != null && !custom && reason.equals(PowerManager.REBOOT_RECOVERY)) {
-            return mContext.getString(R.string.reboot_to_reset_title);
         } else {
             return null;
         }
@@ -197,7 +184,7 @@ public class GlobalActionsImpl implements GlobalActions, CommandQueue.Callbacks 
         final boolean disabled = (state2 & DISABLE2_GLOBAL_ACTIONS) != 0;
         if (displayId != mContext.getDisplayId() || disabled == mDisabled) return;
         mDisabled = disabled;
-        if (disabled && mGlobalActionsDialog != null) {
+        if (disabled) {
             mGlobalActionsDialog.dismissDialog();
         }
     }

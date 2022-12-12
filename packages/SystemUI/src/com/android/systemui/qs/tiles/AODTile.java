@@ -17,8 +17,6 @@
 
 package com.android.systemui.qs.tiles;
 
-import static com.android.internal.logging.MetricsLogger.VIEW_UNKNOWN;
-
 import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
@@ -29,6 +27,7 @@ import android.view.View;
 import androidx.annotation.Nullable;
 
 import com.android.internal.logging.MetricsLogger;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.R;
 import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.dagger.qualifiers.Main;
@@ -37,7 +36,7 @@ import com.android.systemui.plugins.FalsingManager;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.plugins.statusbar.StatusBarStateController;
 import com.android.systemui.qs.QSHost;
-import com.android.systemui.qs.SecureSetting;
+import com.android.systemui.qs.SettingObserver;
 import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.statusbar.policy.BatteryController;
@@ -51,7 +50,7 @@ public class AODTile extends QSTileImpl<BooleanState> implements
     private final Icon mIcon = ResourceIcon.get(R.drawable.ic_qs_aod);
     private final BatteryController mBatteryController;
 
-    private final SecureSetting mSetting;
+    private final SettingObserver mSetting;
 
     @Inject
     public AODTile(
@@ -69,7 +68,7 @@ public class AODTile extends QSTileImpl<BooleanState> implements
         super(host, backgroundLooper, mainHandler, falsingManager, metricsLogger,
                 statusBarStateController, activityStarter, qsLogger);
 
-        mSetting = new SecureSetting(secureSettings, mHandler, Settings.Secure.DOZE_ALWAYS_ON) {
+        mSetting = new SettingObserver(secureSettings, mHandler, Settings.Secure.DOZE_ALWAYS_ON) {
             @Override
             protected void handleValueChanged(int value, boolean observedChange) {
                 handleRefreshState(value);
@@ -154,6 +153,6 @@ public class AODTile extends QSTileImpl<BooleanState> implements
 
     @Override
     public int getMetricsCategory() {
-        return VIEW_UNKNOWN;
+        return MetricsEvent.CUSTOM_QUICK_TILES;
     }
 }

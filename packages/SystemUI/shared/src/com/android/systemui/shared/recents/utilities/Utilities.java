@@ -18,6 +18,7 @@ package com.android.systemui.shared.recents.utilities;
 
 import static android.app.StatusBarManager.NAVIGATION_HINT_BACK_ALT;
 import static android.app.StatusBarManager.NAVIGATION_HINT_IME_SHOWN;
+import static android.app.StatusBarManager.NAVIGATION_HINT_IME_SWITCHER_SHOWN;
 
 import android.annotation.TargetApi;
 import android.content.Context;
@@ -110,10 +111,15 @@ public class Utilities {
                 hints &= ~NAVIGATION_HINT_BACK_ALT;
                 break;
         }
-        if (showImeSwitcher) {
+        if (imeShown) {
             hints |= NAVIGATION_HINT_IME_SHOWN;
         } else {
             hints &= ~NAVIGATION_HINT_IME_SHOWN;
+        }
+        if (showImeSwitcher) {
+            hints |= NAVIGATION_HINT_IME_SWITCHER_SHOWN;
+        } else {
+            hints &= ~NAVIGATION_HINT_IME_SWITCHER_SHOWN;
         }
 
         return hints;
@@ -123,7 +129,7 @@ public class Utilities {
     @TargetApi(Build.VERSION_CODES.R)
     public static boolean isTablet(Context context) {
         final WindowManager windowManager = context.getSystemService(WindowManager.class);
-        final Rect bounds = windowManager.getMaximumWindowMetrics().getBounds();
+        final Rect bounds = windowManager.getCurrentWindowMetrics().getBounds();
 
         float smallestWidth = dpiFromPx(Math.min(bounds.width(), bounds.height()),
                 context.getResources().getConfiguration().densityDpi);

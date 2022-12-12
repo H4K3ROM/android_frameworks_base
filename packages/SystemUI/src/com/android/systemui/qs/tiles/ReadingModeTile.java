@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2020 The LineageOS Project
+ * Copyright (C) 2018-2021 The LineageOS Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 package com.android.systemui.qs.tiles;
 
-import static com.android.internal.logging.MetricsLogger.VIEW_UNKNOWN;
-
 import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
@@ -26,7 +24,9 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
+import com.android.internal.lineage.hardware.LineageHardwareManager;
 import com.android.internal.logging.MetricsLogger;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.R;
 import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.dagger.qualifiers.Main;
@@ -37,11 +37,6 @@ import com.android.systemui.plugins.statusbar.StatusBarStateController;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
-
-import org.lineageos.internal.util.PackageManagerUtils;
-
-import lineageos.hardware.LineageHardwareManager;
-import lineageos.providers.LineageSettings;
 
 import javax.inject.Inject;
 
@@ -62,8 +57,7 @@ public class ReadingModeTile extends QSTileImpl<BooleanState> {
             MetricsLogger metricsLogger,
             StatusBarStateController statusBarStateController,
             ActivityStarter activityStarter,
-            QSLogger qsLogger
-    ) {
+            QSLogger qsLogger) {
         super(host, backgroundLooper, mainHandler, falsingManager, metricsLogger,
                 statusBarStateController, activityStarter, qsLogger);
         mHardware = LineageHardwareManager.getInstance(mContext);
@@ -113,24 +107,12 @@ public class ReadingModeTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
-    protected String composeChangeAnnouncement() {
-        if (mState.value) {
-            return mContext.getString(
-                    R.string.accessibility_quick_settings_reading_mode_changed_on);
-        } else {
-            return mContext.getString(
-                    R.string.accessibility_quick_settings_reading_mode_changed_off);
-        }
-    }
-
-    @Override
     public int getMetricsCategory() {
-        return VIEW_UNKNOWN;
+        return MetricsEvent.AICP_METRICS;
     }
 
     @Override
     public void handleSetListening(boolean listening) {
-        // Do nothing
     }
 
     private boolean isReadingModeEnabled() {

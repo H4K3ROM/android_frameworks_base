@@ -37,6 +37,9 @@
     <!-- When the lock screen is showing and the phone plugged in, and the battery is not fully charged, say that it's wirelessly charging. [CHAR LIMIT=50]  -->
     <string name="keyguard_plugged_in_wireless"><xliff:g id="percentage" example="20%">%s</xliff:g> • Charging wirelessly</string>
 
+    <!-- When the lock screen is showing and the phone plugged in, and the battery is not fully charged, say that it's dock charging. [CHAR LIMIT=50]  -->
+    <string name="keyguard_plugged_in_dock"><xliff:g id="percentage" example="20%">%s</xliff:g> • Charging Dock</string>
+
     <!-- When the lock screen is showing and the phone plugged in, and the battery
          is not fully charged, say that it's charging.  -->
     <string name="keyguard_plugged_in"><xliff:g id="percentage">%s</xliff:g> • Charging</string>
@@ -58,6 +61,8 @@
     <!-- SIM messages --><skip />
     <!-- When the user inserts a sim card from an unsupported network, it becomes network locked -->
     <string name="keyguard_network_locked_message">Network locked</string>
+    <!-- When the user inserts a sim card with some personalization enabled -->
+    <string name="keyguard_perso_locked_message">SIM card is Perso locked</string>
     <!-- Shown when there is no SIM card. -->
     <string name="keyguard_missing_sim_message_short">No SIM card</string>
     <!-- Shown to ask the user to insert a SIM card. -->
@@ -117,10 +122,11 @@
     <!-- Message shown when user enters wrong PIN -->
     <string name="kg_wrong_pin">Wrong PIN</string>
     <!-- Countdown message shown after too many failed unlock attempts -->
-    <plurals name="kg_too_many_failed_attempts_countdown">
-        <item quantity="one">Try again in 1 second.</item>
-        <item quantity="other">Try again in <xliff:g id="number">%d</xliff:g> seconds.</item>
-    </plurals>
+    <string name="kg_too_many_failed_attempts_countdown">{count, plural,
+        =1 {Try again in # second.}
+        other {Try again in # seconds.}
+    }
+    </string>
     <!-- Instructions for using the SIM PIN unlock screen -->
     <string name="kg_sim_pin_instructions">Enter SIM PIN.</string>
     <!-- Instructions for using the SIM PIN unlock screen when there's more than one SIM -->
@@ -213,14 +219,11 @@
      the force lock button. [CHAR LIMIT=80] -->
     <string name="kg_prompt_reason_user_request">Device was locked manually</string>
 
-    <!-- Fingerprint hint message when finger was not recognized.-->
-    <string name="kg_fingerprint_not_recognized">Not recognized</string>
-
     <!-- Face hint message when finger was not recognized. [CHAR LIMIT=20] -->
     <string name="kg_face_not_recognized">Not recognized</string>
 
-     <!-- Error message indicating that the camera privacy sensor has been turned on [CHAR LIMIT=NONE] -->
-    <string name="kg_face_sensor_privacy_enabled">To use Face Unlock, turn on <b>Camera access</b> in Settings > Privacy</string>
+     <!-- Error message indicating that the camera privacy sensor has been turned on [CHAR LIMIT=53] -->
+    <string name="kg_face_sensor_privacy_enabled">To use Face Unlock, turn on camera access in Settings</string>
 
     <!-- Instructions telling the user remaining times when enter SIM PIN view.  -->
     <plurals name="kg_password_default_pin_message">

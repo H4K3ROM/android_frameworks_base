@@ -33,7 +33,7 @@ import android.content.om.CriticalOverlayInfo;
 import android.content.om.OverlayIdentifier;
 import android.content.om.OverlayInfo;
 import android.content.pm.overlay.OverlayPaths;
-import android.content.pm.parsing.ParsingPackageUtils;
+import android.content.pm.parsing.FrameworkParsingPackageUtils;
 import android.os.FabricatedOverlayInfo;
 import android.os.FabricatedOverlayInternal;
 import android.text.TextUtils;
@@ -100,7 +100,8 @@ final class OverlayManagerServiceImpl {
         if (!Objects.equals(theTruth.getOverlayTarget(), oldSettings.targetPackageName)) {
             return true;
         }
-        if (!Objects.equals(theTruth.getOverlayTargetName(), oldSettings.targetOverlayableName)) {
+        if (!Objects.equals(theTruth.getOverlayTargetOverlayableName(),
+                oldSettings.targetOverlayableName)) {
             return true;
         }
         if (oldSettings.isFabricated) {
@@ -343,7 +344,7 @@ final class OverlayManagerServiceImpl {
                 }
 
                 currentInfo = mSettings.init(overlay, userId, pkg.getOverlayTarget(),
-                        pkg.getOverlayTargetName(), pkg.getBaseApkPath(),
+                        pkg.getOverlayTargetOverlayableName(), pkg.getBaseApkPath(),
                         isPackageConfiguredMutable(pkg),
                         isPackageConfiguredEnabled(pkg),
                         getPackageConfiguredPriority(pkg), pkg.getOverlayCategory(),
@@ -491,7 +492,7 @@ final class OverlayManagerServiceImpl {
     Set<PackageAndUser> registerFabricatedOverlay(
             @NonNull final FabricatedOverlayInternal overlay)
             throws OperationFailedException {
-        if (ParsingPackageUtils.validateName(overlay.overlayName,
+        if (FrameworkParsingPackageUtils.validateName(overlay.overlayName,
                 false /* requireSeparator */, true /* requireFilename */) != null) {
             throw new OperationFailedException(
                     "overlay name can only consist of alphanumeric characters, '_', and '.'");
@@ -718,6 +719,11 @@ final class OverlayManagerServiceImpl {
         if (overlayIdmap == null) {
             pw.println("Default overlays: " + TextUtils.join(";", mDefaultOverlays));
         }
+
+        // overlay configurations
+        if (dumpState.getPackageName() == null) {
+            mOverlayConfig.dump(pw);
+        }
     }
 
     @NonNull String[] getDefaultOverlayPackages() {
@@ -779,8 +785,7 @@ final class OverlayManagerServiceImpl {
         // Immutable RROs targeting to "android", ie framework-res.apk, are handled by native
         // layers.
         final OverlayInfo updatedOverlayInfo = mSettings.getOverlayInfo(overlay, userId);
-        if (targetPackage != null && !(("android".equals(info.getTargetPackageName()) ||
-                                        "lineageos.platform".equals(info.getTargetPackageName()))
+        if (targetPackage != null && !("android".equals(info.getTargetPackageName())
                 && !isPackageConfiguredMutable(overlayPackage))) {
             modified |= mIdmapManager.createIdmap(targetPackage, overlayPackage,
                     updatedOverlayInfo.baseCodePath, overlay.getOverlayName(), userId);

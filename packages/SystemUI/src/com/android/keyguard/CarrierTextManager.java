@@ -345,6 +345,22 @@ public class CarrierTextManager {
                 }
             }
         }
+
+        /*
+         * In the case where there is only one sim inserted in a multisim device, if
+         * the service state for the phone with the absent sim is reported as 12 for
+         * voice registration concatenate the sim state with Emergency calls only"
+         */
+        int presentSubId = mKeyguardUpdateMonitor.getPresentSubId();
+        if (numSubs < TelephonyManager.getDefault().getPhoneCount()
+                && mKeyguardUpdateMonitor.isEmergencyOnly() && presentSubId != -1) {
+            if (DEBUG) Log.d(TAG, " Present sim - sub id: " + presentSubId);
+            CharSequence emergencyOnlyText =
+                    getContext().getText(com.android.internal.R.string.emergency_calls_only);
+            displayText = getCarrierTextForSimState(
+                    mKeyguardUpdateMonitor.getSimState(presentSubId), emergencyOnlyText);
+        }
+
         // Only create "No SIM card" if no cards with CarrierName && no wifi when some sim is READY
         // This condition will also be true always when numSubs == 0
         if (allSimsMissing && !anySimReadyAndInService) {
@@ -451,7 +467,7 @@ public class CarrierTextManager {
 
             case NetworkLocked:
                 carrierText = makeCarrierStringOnEmergencyCapable(
-                        mContext.getText(R.string.keyguard_network_locked_message), text);
+                        mContext.getText(R.string.keyguard_perso_locked_message), text);
                 break;
 
             case SimMissing:
@@ -539,7 +555,7 @@ public class CarrierTextManager {
             case TelephonyManager.SIM_STATE_ABSENT:
                 return CarrierTextManager.StatusMode.SimMissing;
             case TelephonyManager.SIM_STATE_NETWORK_LOCKED:
-                return CarrierTextManager.StatusMode.SimMissingLocked;
+                return CarrierTextManager.StatusMode.NetworkLocked;
             case TelephonyManager.SIM_STATE_NOT_READY:
                 return CarrierTextManager.StatusMode.SimNotReady;
             case TelephonyManager.SIM_STATE_PIN_REQUIRED:

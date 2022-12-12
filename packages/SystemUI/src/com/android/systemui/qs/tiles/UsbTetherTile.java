@@ -17,8 +17,6 @@
 
 package com.android.systemui.qs.tiles;
 
-import static com.android.internal.logging.MetricsLogger.VIEW_UNKNOWN;
-
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -35,6 +33,7 @@ import android.view.View;
 import androidx.annotation.Nullable;
 
 import com.android.internal.logging.MetricsLogger;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.R;
 import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.dagger.qualifiers.Main;
@@ -141,6 +140,6 @@ public class UsbTetherTile extends QSTileImpl<BooleanState> {
 
     @Override
     public int getMetricsCategory() {
-        return VIEW_UNKNOWN;
+        return MetricsEvent.CUSTOM_QUICK_TILES;
     }
 }

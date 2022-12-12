@@ -169,6 +169,7 @@ public abstract class KeyguardInputViewController<T extends KeyguardInputView>
         private final EmergencyButtonController.Factory mEmergencyButtonControllerFactory;
         private final FalsingCollector mFalsingCollector;
         private final DevicePostureController mDevicePostureController;
+        private final KeyguardViewController mKeyguardViewController;
 
         @Inject
         public Factory(KeyguardUpdateMonitor keyguardUpdateMonitor,
@@ -179,7 +180,8 @@ public abstract class KeyguardInputViewController<T extends KeyguardInputView>
                 @Main Resources resources, LiftToActivateListener liftToActivateListener,
                 TelephonyManager telephonyManager, FalsingCollector falsingCollector,
                 EmergencyButtonController.Factory emergencyButtonControllerFactory,
-                DevicePostureController devicePostureController) {
+                DevicePostureController devicePostureController,
+                KeyguardViewController keyguardViewController) {
             mKeyguardUpdateMonitor = keyguardUpdateMonitor;
             mLockPatternUtils = lockPatternUtils;
             mLatencyTracker = latencyTracker;
@@ -192,6 +194,7 @@ public abstract class KeyguardInputViewController<T extends KeyguardInputView>
             mEmergencyButtonControllerFactory = emergencyButtonControllerFactory;
             mFalsingCollector = falsingCollector;
             mDevicePostureController = devicePostureController;
+            mKeyguardViewController = keyguardViewController;
         }
 
         /** Create a new {@link KeyguardInputViewController}. */
@@ -212,7 +215,7 @@ public abstract class KeyguardInputViewController<T extends KeyguardInputView>
                         mKeyguardUpdateMonitor, securityMode, mLockPatternUtils,
                         keyguardSecurityCallback, mMessageAreaControllerFactory, mLatencyTracker,
                         mInputMethodManager, emergencyButtonController, mMainExecutor, mResources,
-                        mFalsingCollector);
+                        mFalsingCollector, mKeyguardViewController);
 
             } else if (keyguardInputView instanceof KeyguardPINView) {
                 return new KeyguardPinViewController((KeyguardPINView) keyguardInputView,

@@ -20,14 +20,11 @@ import static android.system.OsConstants.EINVAL;
 
 import static com.android.internal.util.Preconditions.checkNotNull;
 
-import android.app.ActivityThread;
 import android.compat.annotation.UnsupportedAppUsage;
 import android.graphics.ImageFormat;
 import android.graphics.PixelFormat;
 import android.hardware.HardwareBuffer;
 import android.hardware.camera2.params.StreamConfigurationMap;
-import android.os.SystemProperties;
-import android.text.TextUtils;
 import android.util.Range;
 import android.util.Size;
 import android.view.Surface;
@@ -36,6 +33,11 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+
+import android.app.ActivityThread;
+import android.os.SystemProperties;
+import android.text.TextUtils;
+
 
 /**
  * Various Surface utilities.
@@ -81,7 +83,7 @@ public class SurfaceUtils {
     public static boolean isSurfaceForHwVideoEncoder(Surface surface) {
         checkNotNull(surface);
         long usageFlags = nativeDetectSurfaceUsageFlags(surface);
-        long disallowedFlags = HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE | USAGE_HW_COMPOSER
+        long disallowedFlags = USAGE_HW_COMPOSER
                 | USAGE_RENDERSCRIPT | HardwareBuffer.USAGE_CPU_READ_OFTEN;
         long allowedFlags = HardwareBuffer.USAGE_VIDEO_ENCODE;
         boolean videoEncoderConsumer = ((usageFlags & disallowedFlags) == 0
@@ -250,6 +252,7 @@ public class SurfaceUtils {
         }
 
         List<Size> highSpeedSizes = null;
+
         if (fpsRange == null) {
             highSpeedSizes = Arrays.asList(config.getHighSpeedVideoSizes());
         } else {

@@ -170,6 +170,7 @@ class SaveImageInBackgroundTask extends AsyncTask<String, Void, Void> {
             mImageData.shareTransition = createShareAction(mContext, mContext.getResources(), uri);
             mImageData.editTransition = createEditAction(mContext, mContext.getResources(), uri);
             mImageData.deleteAction = createDeleteAction(mContext, mContext.getResources(), uri);
+            mImageData.lensAction = createLensAction(mContext, mContext.getResources(), uri);
             mImageData.quickShareAction = createQuickShareAction(mContext,
                     mQuickShareData.quickShareAction, uri);
 
@@ -293,7 +294,9 @@ class SaveImageInBackgroundTask extends AsyncTask<String, Void, Void> {
                     new ClipData.Item(uri));
             sharingIntent.setClipData(clipdata);
             sharingIntent.putExtra(Intent.EXTRA_SUBJECT, subject);
-            sharingIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            sharingIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+
 
             // Make sure pending intents for the system user are still unique across users
             // by setting the (otherwise unused) request code to the current user id.
@@ -302,6 +305,7 @@ class SaveImageInBackgroundTask extends AsyncTask<String, Void, Void> {
             Intent sharingChooserIntent = Intent.createChooser(sharingIntent, null)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK)
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
 
             // cancel current pending intent (if any) since clipData isn't used for matching
             PendingIntent pendingIntent = PendingIntent.getActivityAsUser(
@@ -404,6 +408,29 @@ class SaveImageInBackgroundTask extends AsyncTask<String, Void, Void> {
         return deleteActionBuilder.build();
     }
 
+    Notification.Action createLensAction(Context context, Resources r, Uri uri) {
+        // Make sure pending intents for the system user are still unique across users
+        // by setting the (otherwise unused) request code to the current user id.
+        int requestCode = mContext.getUserId();
+
+        // Create a lens action for the notification
+        PendingIntent lensAction = PendingIntent.getBroadcast(context, requestCode,
+                new Intent(context, LensScreenshotReceiver.class)
+                        .putExtra(ScreenshotController.SCREENSHOT_URI_ID, uri.toString())
+                        .putExtra(ScreenshotController.EXTRA_ID, mScreenshotId)
+                        .putExtra(ScreenshotController.EXTRA_SMART_ACTIONS_ENABLED,
+                                mSmartActionsEnabled)
+                        .addFlags(Intent.FLAG_RECEIVER_FOREGROUND),
+                PendingIntent.FLAG_CANCEL_CURRENT
+                        | PendingIntent.FLAG_ONE_SHOT
+                        | PendingIntent.FLAG_IMMUTABLE);
+        Notification.Action.Builder lensActionBuilder = new Notification.Action.Builder(
+                Icon.createWithResource(r, R.drawable.ic_screenshot_lensss),
+                r.getString(R.string.lensss), lensAction);
+
+        return lensActionBuilder.build();
+    }
+
     private UserHandle getUserHandleOfForegroundApplication(Context context) {
         UserManager manager = UserManager.get(context);
         int result;
@@ -425,8 +452,7 @@ class SaveImageInBackgroundTask extends AsyncTask<String, Void, Void> {
             List<Notification.Action> actions, Context context) {
         List<Notification.Action> broadcastActions = new ArrayList<>();
         for (Notification.Action action : actions) {
-            // Proxy smart actions through {@link GlobalScreenshot.SmartActionsReceiver}
-            // for logging smart actions.
+            // Proxy smart actions through {@link SmartActionsReceiver} for logging smart actions.
             Bundle extras = action.getExtras();
             String actionType = extras.getString(
                     ScreenshotNotificationSmartActionsProvider.ACTION_TYPE,
@@ -480,8 +506,7 @@ class SaveImageInBackgroundTask extends AsyncTask<String, Void, Void> {
                 context, 0, sharingIntent,
                 PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        // Proxy smart actions through {@link GlobalScreenshot.SmartActionsReceiver}
-        // for logging smart actions.
+        // Proxy smart actions through {@link SmartActionsReceiver} for logging smart actions.
         Bundle extras = action.getExtras();
         String actionType = extras.getString(
                 ScreenshotNotificationSmartActionsProvider.ACTION_TYPE,

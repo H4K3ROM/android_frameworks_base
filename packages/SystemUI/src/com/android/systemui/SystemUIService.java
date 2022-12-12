@@ -71,6 +71,7 @@ public class SystemUIService extends Service {
 
         // Finish initializing dump logic
         mLogBufferFreezer.attach(mBroadcastDispatcher);
+        mDumpHandler.init();
 
         // If configured, set up a battery notification
         if (getResources().getBoolean(R.bool.config_showNotificationForUnknownBatteryState)) {
@@ -82,7 +83,7 @@ public class SystemUIService extends Service {
             throw new RuntimeException();
         }
 
-        if (Build.IS_ENG) {
+        if (Build.IS_DEBUGGABLE) {
             // b/71353150 - looking for leaked binder proxies
             BinderInternal.nSetBinderProxyCountEnabled(true);
             BinderInternal.nSetBinderProxyCountWatermarks(1000,900);
@@ -120,6 +121,6 @@ public class SystemUIService extends Service {
                     DumpHandler.PRIORITY_ARG_CRITICAL};
         }
 
-        mDumpHandler.dump(fd, pw, massagedArgs);
+        mDumpHandler.dump(pw, massagedArgs);
     }
 }

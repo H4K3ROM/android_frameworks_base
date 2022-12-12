@@ -43,7 +43,6 @@ static const char* kPathAllowlist[] = {
         "/sys/kernel/debug/tracing/trace_marker",
         "/sys/kernel/tracing/trace_marker",
         "/system/framework/framework-res.apk",
-        "/system/framework/org.lineageos.platform-res.apk",
         "/dev/urandom",
         "/dev/ion",
         "/dev/dri/renderD129", // Fixes b/31172436
@@ -135,6 +134,14 @@ bool FileDescriptorAllowlist::IsAllowed(const std::string& path) const {
          android::base::StartsWith(path, kOdmOverlayDir) ||
          android::base::StartsWith(path, kSystemOemOverlayDir) ||
          android::base::StartsWith(path, kOemOverlayDir)) &&
+        android::base::EndsWith(path, kApkSuffix) && path.find("/../") == std::string::npos) {
+        return true;
+    }
+
+    // Allow Runtime Resource Overlays inside APEXes.
+    static const char* kOverlayPathSuffix = "/overlay";
+    if (android::base::StartsWith(path, kApexPrefix) &&
+        android::base::EndsWith(android::base::Dirname(path), kOverlayPathSuffix) &&
         android::base::EndsWith(path, kApkSuffix) && path.find("/../") == std::string::npos) {
         return true;
     }

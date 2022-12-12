@@ -93,6 +93,7 @@ import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.ScrollCaptureCallback;
 import android.view.SearchEvent;
+import android.view.Surface;
 import android.view.SurfaceHolder.Callback2;
 import android.view.View;
 import android.view.ViewConfiguration;
@@ -110,6 +111,8 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.window.OnBackInvokedDispatcher;
+import android.window.ProxyOnBackInvokedDispatcher;
 
 import com.android.internal.R;
 import com.android.internal.view.menu.ContextMenuBuilder;
@@ -340,6 +343,8 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
 
     boolean mDecorFitsSystemWindows = true;
 
+    private final ProxyOnBackInvokedDispatcher mProxyOnBackInvokedDispatcher;
+
     static class WindowManagerHolder {
         static final IWindowManager sWindowManager = IWindowManager.Stub.asInterface(
                 ServiceManager.getService("window"));
@@ -353,6 +358,8 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
         mLayoutInflater = LayoutInflater.from(context);
         mRenderShadowsInCompositor = Settings.Global.getInt(context.getContentResolver(),
                 DEVELOPMENT_RENDER_SHADOWS_IN_COMPOSITOR, 1) != 0;
+        mProxyOnBackInvokedDispatcher = new ProxyOnBackInvokedDispatcher(
+                context.getApplicationInfo().isOnBackInvokedCallbackEnabled());
     }
 
     /**
@@ -373,6 +380,8 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
             // window, as we'll be skipping the addView in handleResumeActivity(), and
             // the token will not be updated as for a new window.
             getAttributes().token = preservedWindow.getAttributes().token;
+            mProxyOnBackInvokedDispatcher.setActualDispatcher(
+                    preservedWindow.getOnBackInvokedDispatcher());
         }
         // Even though the device doesn't support picture-in-picture mode,
         // an user can force using it through developer options.
@@ -1841,8 +1850,9 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
 
     @Override
     public void setLocalFocus(boolean hasFocus, boolean inTouchMode) {
-        getViewRootImpl().windowFocusChanged(hasFocus, inTouchMode);
-
+        ViewRootImpl viewRoot = getViewRootImpl();
+        viewRoot.windowFocusChanged(hasFocus);
+        viewRoot.touchModeChanged(inTouchMode);
     }
 
     @Override
@@ -1934,6 +1944,30 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
                 // If we have a session send it the volume command, otherwise
                 // use the suggested stream.
                 if (mMediaController != null) {
+                    int direction = 0;
+                    switch (keyCode) {
+                        case KeyEvent.KEYCODE_VOLUME_UP:
+                            direction = AudioManager.ADJUST_RAISE;
+                            break;
+                        case KeyEvent.KEYCODE_VOLUME_DOWN:
+                            direction = AudioManager.ADJUST_LOWER;
+                            break;
+                        case KeyEvent.KEYCODE_VOLUME_MUTE:
+                            direction = AudioManager.ADJUST_TOGGLE_MUTE;
+                            break;
+                    }
+                    final int rotation = getWindowManager().getDefaultDisplay().getRotation();
+                    final Configuration config = getContext().getResources().getConfiguration();
+                    final boolean swapKeys = Settings.System.getInt(getContext().getContentResolver(),
+                            Settings.System.SWAP_VOLUME_BUTTONS, 0) == 1;
+
+                    if (swapKeys
+                            && (rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_180)
+                            && config.getLayoutDirection() == View.LAYOUT_DIRECTION_LTR) {
+                        direction = keyCode == KeyEvent.KEYCODE_VOLUME_UP
+                                ? AudioManager.ADJUST_LOWER
+                                : AudioManager.ADJUST_RAISE;
+                    }
                     getMediaSessionManager().dispatchVolumeKeyEventToSessionAsSystemService(event,
                             mMediaController.getSessionToken());
                 } else {
@@ -2145,6 +2179,7 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
     /** Notify when decor view is attached to window and {@link ViewRootImpl} is available. */
     void onViewRootImplSet(ViewRootImpl viewRoot) {
         viewRoot.setActivityConfigCallback(mActivityConfigCallback);
+        mProxyOnBackInvokedDispatcher.setActualDispatcher(viewRoot.getOnBackInvokedDispatcher());
         applyDecorFitsSystemWindows();
     }
 
@@ -3991,5 +4026,11 @@ public class PhoneWindow extends Window implements MenuBuilder.Callback {
     @Override
     public AttachedSurfaceControl getRootSurfaceControl() {
         return getViewRootImplOrNull();
+    }
+
+    @NonNull
+    @Override
+    public OnBackInvokedDispatcher getOnBackInvokedDispatcher() {
+        return mProxyOnBackInvokedDispatcher;
     }
 }

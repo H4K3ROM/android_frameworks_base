@@ -44,15 +44,18 @@ public class BrightnessDialog extends Activity {
     private final BrightnessSliderController.Factory mToggleSliderFactory;
     private final BroadcastDispatcher mBroadcastDispatcher;
     private final Handler mBackgroundHandler;
+    private final AutoBrightnessController.Factory mAutoBrightnessFactory;
 
     @Inject
     public BrightnessDialog(
             BroadcastDispatcher broadcastDispatcher,
             BrightnessSliderController.Factory factory,
-            @Background Handler bgHandler) {
+            @Background Handler bgHandler,
+            AutoBrightnessController.Factory autoBrightnessFactory) {
         mBroadcastDispatcher = broadcastDispatcher;
         mToggleSliderFactory = factory;
         mBackgroundHandler = bgHandler;
+        mAutoBrightnessFactory = autoBrightnessFactory;
     }
 
 
@@ -79,10 +82,13 @@ public class BrightnessDialog extends Activity {
 
         BrightnessSliderController controller = mToggleSliderFactory.create(this, frame);
         controller.init();
+        final AutoBrightnessController autoBrightnessController =
+            mAutoBrightnessFactory.create(controller.getRootView());
         frame.addView(controller.getRootView(), MATCH_PARENT, WRAP_CONTENT);
 
         mBrightnessController = new BrightnessController(
-                this, controller, mBroadcastDispatcher, mBackgroundHandler);
+                this, controller, mBroadcastDispatcher,
+                mBackgroundHandler, autoBrightnessController);
     }
 
     @Override
@@ -90,6 +96,12 @@ public class BrightnessDialog extends Activity {
         super.onStart();
         mBrightnessController.registerCallbacks();
         MetricsLogger.visible(this, MetricsEvent.BRIGHTNESS_DIALOG);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
     }
 
     @Override

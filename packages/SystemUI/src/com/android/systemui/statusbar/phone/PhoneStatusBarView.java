@@ -19,6 +19,7 @@ package com.android.systemui.statusbar.phone;
 
 import android.annotation.Nullable;
 import android.content.Context;
+import android.content.res.Resources;
 import android.content.res.Configuration;
 import android.graphics.Rect;
 import android.inputmethodservice.InputMethodService;
@@ -60,16 +61,23 @@ public class PhoneStatusBarView extends FrameLayout implements Callbacks {
     private final CommandQueue mCommandQueue;
     private final StatusBarContentInsetsProvider mContentInsetsProvider;
 
+    private int mBasePaddingBottom;
+    private int mBasePaddingLeft;
+    private int mBasePaddingRight;
+    private int mBasePaddingTop;
+
+    private ViewGroup mStatusBarContents;
+
     private DarkReceiver mBattery;
     private ClockController mClockController;
     private int mRotationOrientation = -1;
     private RotationButtonController mRotationButtonController;
     @Nullable
-    private View mCenterIconSpace;
-    @Nullable
     private View mCutoutSpace;
     @Nullable
     private DisplayCutout mDisplayCutout;
+    @Nullable
+    private Rect mDisplaySize;
     private int mStatusBarHeight;
     @Nullable
     private TouchEventHandler mTouchEventHandler;
@@ -132,12 +140,31 @@ public class PhoneStatusBarView extends FrameLayout implements Callbacks {
         mTouchEventHandler = handler;
     }
 
+    public void shiftStatusBarItems(int horizontalShift, int verticalShift) {
+        if (mStatusBarContents == null) {
+            return;
+        }
+
+        mStatusBarContents.setPaddingRelative(mBasePaddingLeft + horizontalShift,
+                mBasePaddingTop + verticalShift,
+                mBasePaddingRight + horizontalShift,
+                mBasePaddingBottom - verticalShift);
+        invalidate();
+    }
+
     @Override
     public void onFinishInflate() {
+        super.onFinishInflate();
         mBattery = findViewById(R.id.battery);
         mClockController = new ClockController(getContext(), this);
         mCutoutSpace = findViewById(R.id.cutout_space_view);
-        mCenterIconSpace = findViewById(R.id.centered_icon_area);
+
+        mStatusBarContents = (ViewGroup) findViewById(R.id.status_bar_contents);
+
+        mBasePaddingLeft = mStatusBarContents.getPaddingStart();
+        mBasePaddingTop = mStatusBarContents.getPaddingTop();
+        mBasePaddingRight = mStatusBarContents.getPaddingEnd();
+        mBasePaddingBottom = mStatusBarContents.getPaddingBottom();
 
         updateResources();
     }
@@ -148,7 +175,7 @@ public class PhoneStatusBarView extends FrameLayout implements Callbacks {
         // Always have Battery meters in the status bar observe the dark/light modes.
         Dependency.get(DarkIconDispatcher.class).addDarkReceiver(mBattery);
         mClockController.addDarkReceiver();
-        if (updateOrientationAndCutout()) {
+        if (updateDisplayParameters()) {
             updateLayoutForCutout();
         }
 
@@ -172,10 +199,18 @@ public class PhoneStatusBarView extends FrameLayout implements Callbacks {
     @Override
     protected void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+
+        mStatusBarContents = (ViewGroup) findViewById(R.id.status_bar_contents);
+
+        mBasePaddingLeft = mStatusBarContents.getPaddingStart();
+        mBasePaddingTop = mStatusBarContents.getPaddingTop();
+        mBasePaddingRight = mStatusBarContents.getPaddingEnd();
+        mBasePaddingBottom = mStatusBarContents.getPaddingBottom();
+
         updateResources();
 
         // May trigger cutout space layout-ing
-        if (updateOrientationAndCutout()) {
+        if (updateDisplayParameters()) {
             updateLayoutForCutout();
             requestLayout();
         }
@@ -183,7 +218,7 @@ public class PhoneStatusBarView extends FrameLayout implements Callbacks {
 
     @Override
     public WindowInsets onApplyWindowInsets(WindowInsets insets) {
-        if (updateOrientationAndCutout()) {
+        if (updateDisplayParameters()) {
             updateLayoutForCutout();
             requestLayout();
         }
@@ -193,7 +228,7 @@ public class PhoneStatusBarView extends FrameLayout implements Callbacks {
     /**
      * @return boolean indicating if we need to update the cutout location / margins
      */
-    private boolean updateOrientationAndCutout() {
+    private boolean updateDisplayParameters() {
         boolean changed = false;
         int newRotation = RotationUtils.getExactRotation(mContext);
         if (newRotation != mRotationOrientation) {
@@ -204,6 +239,13 @@ public class PhoneStatusBarView extends FrameLayout implements Callbacks {
         if (!Objects.equals(getRootWindowInsets().getDisplayCutout(), mDisplayCutout)) {
             changed = true;
             mDisplayCutout = getRootWindowInsets().getDisplayCutout();
+        }
+
+        final Rect newSize = mContext.getResources().getConfiguration().windowConfiguration
+                .getMaxBounds();
+        if (!Objects.equals(newSize, mDisplaySize)) {
+            changed = true;
+            mDisplaySize = newSize;
         }
 
         return changed;
@@ -303,12 +345,10 @@ public class PhoneStatusBarView extends FrameLayout implements Callbacks {
 
         boolean hasCornerCutout = mContentInsetsProvider.currentRotationHasCornerCutout();
         if (mDisplayCutout == null || mDisplayCutout.isEmpty() || hasCornerCutout) {
-            mCenterIconSpace.setVisibility(View.VISIBLE);
             mCutoutSpace.setVisibility(View.GONE);
             return;
         }
 
-        mCenterIconSpace.setVisibility(View.GONE);
         mCutoutSpace.setVisibility(View.VISIBLE);
         LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) mCutoutSpace.getLayoutParams();
 

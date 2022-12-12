@@ -23,20 +23,17 @@ import android.content.res.Configuration;
 import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.Handler;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.AttributeSet;
 import android.view.View;
-import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
-import com.android.settingslib.development.DevelopmentSettingsEnabler;
 import com.android.systemui.R;
 
 /**
@@ -46,8 +43,9 @@ import com.android.systemui.R;
 public class QSFooterView extends FrameLayout {
     private PageIndicator mPageIndicator;
     private TextView mBuildText;
-    private View mActionsContainer;
+    private View mEditButton;
 
+    @Nullable
     protected TouchAnimator mFooterAnimator;
 
     private boolean mQsDisabled;
@@ -56,9 +54,10 @@ public class QSFooterView extends FrameLayout {
 
     private boolean mShouldShowBuildText;
 
+    @Nullable
     private OnClickListener mExpandClickListener;
 
-    private final ContentObserver mDeveloperSettingsObserver = new ContentObserver(
+    private final ContentObserver mSettingsObserver = new ContentObserver(
             new Handler(mContext.getMainLooper())) {
         @Override
         public void onChange(boolean selfChange, Uri uri) {
@@ -75,8 +74,8 @@ public class QSFooterView extends FrameLayout {
     protected void onFinishInflate() {
         super.onFinishInflate();
         mPageIndicator = findViewById(R.id.footer_page_indicator);
-        mActionsContainer = requireViewById(R.id.qs_footer_actions);
         mBuildText = findViewById(R.id.build);
+        mEditButton = findViewById(android.R.id.edit);
 
         updateResources();
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
@@ -84,25 +83,22 @@ public class QSFooterView extends FrameLayout {
     }
 
     private void setBuildText() {
-        if (mBuildText == null) return;
-        if (DevelopmentSettingsEnabler.isDevelopmentSettingsEnabled(mContext)) {
-            mBuildText.setText(mContext.getString(
-                    com.android.internal.R.string.bugreport_status,
-                    Build.VERSION.RELEASE_OR_CODENAME,
-                    Build.ID));
-            // Set as selected for marquee before its made visible, then it won't be announced when
-            // it's made visible.
-            mBuildText.setSelected(true);
-            mShouldShowBuildText = true;
-        } else {
-            mBuildText.setText(null);
+        if (mBuildText == null) {
             mShouldShowBuildText = false;
-            mBuildText.setSelected(false);
+            return;
         }
-    }
-
-    void updateExpansion() {
-        setExpansion(mExpansionAmount);
+        mShouldShowBuildText = Settings.System.getIntForUser(mContext.getContentResolver(),
+                        Settings.System.QS_FOOTER_TEXT_SHOW, 0,
+                        UserHandle.USER_CURRENT) == 1;
+        final String text = Settings.System.getStringForUser(mContext.getContentResolver(),
+                        Settings.System.QS_FOOTER_TEXT_STRING,
+                        UserHandle.USER_CURRENT);
+        if (mShouldShowBuildText) {
+            mBuildText.setText((text == null || text.isEmpty()) ? "#AICP" : text);
+            mBuildText.setVisibility(View.VISIBLE);
+        } else {
+            mBuildText.setVisibility(View.GONE);
+        }
     }
 
     @Override
@@ -125,9 +121,9 @@ public class QSFooterView extends FrameLayout {
     @Nullable
     private TouchAnimator createFooterAnimator() {
         TouchAnimator.Builder builder = new TouchAnimator.Builder()
-                .addFloat(mActionsContainer, "alpha", 0, 1)
                 .addFloat(mPageIndicator, "alpha", 0, 1)
                 .addFloat(mBuildText, "alpha", 0, 1)
+                .addFloat(mEditButton, "alpha", 0, 1)
                 .setStartDelay(0.9f);
         return builder.build();
     }
@@ -159,32 +155,18 @@ public class QSFooterView extends FrameLayout {
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         mContext.getContentResolver().registerContentObserver(
-                Settings.Global.getUriFor(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED), false,
-                mDeveloperSettingsObserver, UserHandle.USER_ALL);
+                Settings.System.getUriFor(Settings.System.QS_FOOTER_TEXT_SHOW), false,
+                mSettingsObserver, UserHandle.USER_ALL);
+        mContext.getContentResolver().registerContentObserver(
+                Settings.System.getUriFor(Settings.System.QS_FOOTER_TEXT_STRING), false,
+                mSettingsObserver, UserHandle.USER_ALL);
     }
 
     @Override
     @VisibleForTesting
     public void onDetachedFromWindow() {
-        mContext.getContentResolver().unregisterContentObserver(mDeveloperSettingsObserver);
+        mContext.getContentResolver().unregisterContentObserver(mSettingsObserver);
         super.onDetachedFromWindow();
-    }
-
-    @Override
-    public boolean performAccessibilityAction(int action, Bundle arguments) {
-        if (action == AccessibilityNodeInfo.ACTION_EXPAND) {
-            if (mExpandClickListener != null) {
-                mExpandClickListener.onClick(null);
-                return true;
-            }
-        }
-        return super.performAccessibilityAction(action, arguments);
-    }
-
-    @Override
-    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
-        super.onInitializeAccessibilityNodeInfo(info);
-        info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
     }
 
     void disable(int state2) {

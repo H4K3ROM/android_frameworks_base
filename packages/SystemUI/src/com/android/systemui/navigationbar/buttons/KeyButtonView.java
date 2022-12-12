@@ -63,8 +63,6 @@ import com.android.systemui.shared.system.QuickStepContract;
 
 public class KeyButtonView extends ImageView implements ButtonInterface {
     private static final String TAG = KeyButtonView.class.getSimpleName();
-    private static final int CURSOR_REPEAT_FLAGS = KeyEvent.FLAG_SOFT_KEYBOARD
-            | KeyEvent.FLAG_KEEP_TOUCH_MODE;
 
     private final boolean mPlaySounds;
     private final UiEventLogger mUiEventLogger;
@@ -127,13 +125,7 @@ public class KeyButtonView extends ImageView implements ButtonInterface {
         public void run() {
             if (isPressed()) {
                 // Log.d("KeyButtonView", "longpressed: " + this);
-                if (mCode == KeyEvent.KEYCODE_DPAD_LEFT || mCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                    sendEvent(KeyEvent.ACTION_UP, CURSOR_REPEAT_FLAGS,
-                            System.currentTimeMillis(), false);
-                    sendEvent(KeyEvent.ACTION_DOWN, CURSOR_REPEAT_FLAGS,
-                            System.currentTimeMillis(), false);
-                    postDelayed(mCheckLongPress, ViewConfiguration.getKeyRepeatDelay());
-                } else if (isLongClickable()) {
+                if (isLongClickable()) {
                     // Just an old-fashioned ImageView
                     performLongClick();
                     mLongClicked = true;
@@ -281,13 +273,9 @@ public class KeyButtonView extends ImageView implements ButtonInterface {
                 mLongClicked = false;
                 setPressed(true);
 
-                // Use raw X and Y to detect gestures in case a parent changes the x and y values
-                mTouchDownX = (int) ev.getRawX();
-                mTouchDownY = (int) ev.getRawY();
-                if (mCode == KeyEvent.KEYCODE_DPAD_LEFT || mCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                    sendEvent(KeyEvent.ACTION_DOWN, KeyEvent.FLAG_VIRTUAL_HARD_KEY
-                            | KeyEvent.FLAG_KEEP_TOUCH_MODE, mDownTime, false);
-                } else if (mCode != KEYCODE_UNKNOWN) {
+                mTouchDownX = (int) ev.getX();
+                mTouchDownY = (int) ev.getY();
+                if (mCode != KEYCODE_UNKNOWN) {
                     sendEvent(KeyEvent.ACTION_DOWN, 0, mDownTime);
                 } else {
                     // Provide the same haptic feedback that the system offers for virtual keys.
@@ -300,8 +288,8 @@ public class KeyButtonView extends ImageView implements ButtonInterface {
                 postDelayed(mCheckLongPress, ViewConfiguration.getLongPressTimeout());
                 break;
             case MotionEvent.ACTION_MOVE:
-                x = (int)ev.getRawX();
-                y = (int)ev.getRawY();
+                x = (int) ev.getX();
+                y = (int) ev.getY();
 
                 float slop = QuickStepContract.getQuickStepTouchSlopPx(getContext());
                 if (Math.abs(x - mTouchDownX) > slop || Math.abs(y - mTouchDownY) > slop) {
@@ -416,10 +404,6 @@ public class KeyButtonView extends ImageView implements ButtonInterface {
     }
 
     private void sendEvent(int action, int flags, long when) {
-        sendEvent(action, flags, when, true);
-    }
-
-    private void sendEvent(int action, int flags, long when, boolean applyDefaultFlags) {
         mMetricsLogger.write(new LogMaker(MetricsEvent.ACTION_NAV_BUTTON_EVENT)
                 .setType(MetricsEvent.TYPE_ACTION)
                 .setSubtype(mCode)
@@ -434,13 +418,10 @@ public class KeyButtonView extends ImageView implements ButtonInterface {
             }
         }
         final int repeatCount = (flags & KeyEvent.FLAG_LONG_PRESS) != 0 ? 1 : 0;
-        if (applyDefaultFlags) {
-            flags |= KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_VIRTUAL_HARD_KEY;
-        }
         final KeyEvent ev = new KeyEvent(mDownTime, when, action, mCode, repeatCount,
                 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
-                flags,
-                InputDevice.SOURCE_KEYBOARD);
+                flags | KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_VIRTUAL_HARD_KEY,
+                InputDevice.SOURCE_NAVIGATION_BAR);
 
         int displayId = INVALID_DISPLAY;
 

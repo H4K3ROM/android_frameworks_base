@@ -30,6 +30,7 @@ import android.view.View;
 import androidx.annotation.Nullable;
 
 import com.android.internal.logging.MetricsLogger;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.R;
 import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.dagger.qualifiers.Main;
@@ -41,8 +42,6 @@ import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.statusbar.policy.BatteryController;
-
-import org.lineageos.internal.logging.LineageMetricsLogger;
 
 import vendor.lineage.powershare.V1_0.IPowerShare;
 
@@ -208,7 +207,7 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
 
     @Override
     public int getMetricsCategory() {
-        return LineageMetricsLogger.TILE_POWERSHARE;
+        return MetricsEvent.CUSTOM_QUICK_TILES;
     }
 
     @Override

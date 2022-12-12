@@ -46,6 +46,7 @@ import java.util.Date;
 import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 
 /**
  * A scheduler for biometric HAL operations. Maintains a queue of {@link BaseClientMonitor}
@@ -59,6 +60,9 @@ import java.util.Locale;
 public class BiometricScheduler {
 
     private static final String BASE_TAG = "BiometricScheduler";
+
+    private boolean mCancel;
+
     // Number of recent operations to keep in our logs for dumpsys
     protected static final int LOG_NUM_RECENT_OPERATIONS = 50;
 
@@ -160,7 +164,7 @@ public class BiometricScheduler {
     // Internal callback, notified when an operation is complete. Notifies the requester
     // that the operation is complete, before performing internal scheduler work (such as
     // starting the next client).
-    private final BaseClientMonitor.Callback mInternalCallback = new BaseClientMonitor.Callback() {
+    private final ClientMonitorCallback mInternalCallback = new ClientMonitorCallback() {
         @Override
         public void onClientStarted(@NonNull BaseClientMonitor clientMonitor) {
             Slog.d(getTag(), "[Started] " + clientMonitor);
@@ -237,17 +241,20 @@ public class BiometricScheduler {
      * @param gestureAvailabilityDispatcher may be null if the sensor does not support gestures
      *                                      (such as fingerprint swipe).
      */
-    public BiometricScheduler(@NonNull String tag,
+    public BiometricScheduler(Context context, @NonNull String tag,
             @SensorType int sensorType,
             @Nullable GestureAvailabilityDispatcher gestureAvailabilityDispatcher) {
         this(tag, new Handler(Looper.getMainLooper()), sensorType, gestureAvailabilityDispatcher,
                 IBiometricService.Stub.asInterface(
                         ServiceManager.getService(Context.BIOMETRIC_SERVICE)),
                 LOG_NUM_RECENT_OPERATIONS, CoexCoordinator.getInstance());
+
+        mCancel = context.getResources().getBoolean(
+                com.android.internal.R.bool.config_fpCancelIfNotIdle);
     }
 
     @VisibleForTesting
-    public BaseClientMonitor.Callback getInternalCallback() {
+    public ClientMonitorCallback getInternalCallback() {
         return mInternalCallback;
     }
 
@@ -257,8 +264,13 @@ public class BiometricScheduler {
 
     protected void startNextOperationIfIdle() {
         if (mCurrentOperation != null) {
-            Slog.v(getTag(), "Not idle, current operation: " + mCurrentOperation);
-            return;
+            if (mCancel && !mCurrentOperation.isFinished()) {
+                Slog.v(getTag(), "Not idle, cancelling current operation: " + mCurrentOperation);
+                mCurrentOperation.cancel(mHandler, mInternalCallback);
+            } else {
+                Slog.v(getTag(), "Not idle, current operation: " + mCurrentOperation);
+                return;
+            }
         }
         if (mPendingOperations.isEmpty()) {
             Slog.d(getTag(), "No operations, returning to idle");
@@ -285,7 +297,7 @@ public class BiometricScheduler {
 
         // Not all operations start immediately. BiometricPrompt waits for its operation
         // to arrive at the head of the queue, before pinging it to start.
-        final int cookie = mCurrentOperation.isReadyToStart();
+        final int cookie = mCurrentOperation.isReadyToStart(mInternalCallback);
         if (cookie == 0) {
             if (!mCurrentOperation.start(mInternalCallback)) {
                 // Note down current length of queue
@@ -316,7 +328,8 @@ public class BiometricScheduler {
             }
         } else {
             try {
-                mBiometricService.onReadyForAuthentication(cookie);
+                mBiometricService.onReadyForAuthentication(
+                        mCurrentOperation.getClientMonitor().getRequestId(), cookie);
             } catch (RemoteException e) {
                 Slog.e(getTag(), "Remote exception when contacting BiometricService", e);
             }
@@ -368,7 +381,7 @@ public class BiometricScheduler {
      * @param clientCallback optional callback, invoked when the client state changes.
      */
     public void scheduleClientMonitor(@NonNull BaseClientMonitor clientMonitor,
-            @Nullable BaseClientMonitor.Callback clientCallback) {
+            @Nullable ClientMonitorCallback clientCallback) {
         // If the incoming operation should interrupt preceding clients, mark any interruptable
         // pending clients as canceling. Once they reach the head of the queue, the scheduler will
         // send ERROR_CANCELED and skip the operation.
@@ -456,10 +469,33 @@ public class BiometricScheduler {
     }
 
     /**
+     * Get current operation <code>BaseClientMonitor</code>
+     * @deprecated TODO: b/229994966, encapsulate client monitors
      * @return the current operation
      */
+    @Deprecated
+    @Nullable
     public BaseClientMonitor getCurrentClient() {
         return mCurrentOperation != null ? mCurrentOperation.getClientMonitor() : null;
+    }
+
+    /**
+     * The current operation if the requestId is set and matches.
+     * @deprecated TODO: b/229994966, encapsulate client monitors
+     */
+    @Deprecated
+    @Nullable
+    public void getCurrentClientIfMatches(long requestId,
+            @NonNull Consumer<BaseClientMonitor> clientMonitorConsumer) {
+        mHandler.post(() -> {
+            if (mCurrentOperation != null) {
+                if (mCurrentOperation.isMatchingRequestId(requestId)) {
+                    clientMonitorConsumer.accept(mCurrentOperation.getClientMonitor());
+                    return;
+                }
+            }
+            clientMonitorConsumer.accept(null);
+        });
     }
 
     public int getCurrentPendingCount() {

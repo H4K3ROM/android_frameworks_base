@@ -22,7 +22,7 @@ import android.view.Surface
 class DummyUdfpsHbmProvider constructor(
     private val context: Context
 ): UdfpsHbmProvider {
-    override fun enableHbm(hbmType: Int, surface: Surface?, onHbmEnabled: Runnable?) {
+    override fun enableHbm(halControlsIllumination: Boolean, onHbmEnabled: Runnable?) {
         onHbmEnabled?.run()
     }
 

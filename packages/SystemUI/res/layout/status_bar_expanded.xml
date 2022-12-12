@@ -21,15 +21,23 @@
 <com.android.systemui.statusbar.phone.NotificationPanelView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:systemui="http://schemas.android.com/apk/res-auto"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/notification_panel"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/transparent">
+
     <ViewStub
         android:id="@+id/keyguard_qs_user_switch_stub"
         android:layout="@layout/keyguard_qs_user_switch"
         android:layout_height="match_parent"
         android:layout_width="match_parent" />
+
+    <include layout="@layout/lights_view"
+        android:id="@+id/lights_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
 
     <include
         layout="@layout/keyguard_bottom_area"
@@ -61,7 +69,6 @@
             android:id="@+id/lock_icon"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:padding="@dimen/lock_icon_padding"
             android:layout_gravity="center"
             android:scaleType="centerCrop"/>
 
@@ -90,10 +97,11 @@
         <FrameLayout
             android:id="@+id/qs_frame"
             android:layout="@layout/qs_panel"
-            android:layout_width="@dimen/qs_panel_width"
+            android:layout_width="0dp"
             android:layout_height="0dp"
             android:clipToPadding="false"
             android:clipChildren="false"
+            android:layout_marginHorizontal="@dimen/notification_panel_margin_horizontal"
             systemui:viewType="com.android.systemui.plugins.qs.QS"
             systemui:layout_constraintStart_toStartOf="parent"
             systemui:layout_constraintEnd_toEndOf="parent"
@@ -111,9 +119,10 @@
         <com.android.systemui.statusbar.notification.stack.NotificationStackScrollLayout
             android:id="@+id/notification_stack_scroller"
             android:layout_marginTop="@dimen/notification_panel_margin_top"
-            android:layout_width="@dimen/notification_panel_width"
+            android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginBottom="@dimen/close_handle_underlap"
+            android:layout_marginHorizontal="@dimen/notification_panel_margin_horizontal"
+            android:layout_marginBottom="@dimen/notification_panel_margin_bottom"
             android:importantForAccessibility="no"
             systemui:layout_constraintStart_toStartOf="parent"
             systemui:layout_constraintEnd_toEndOf="parent"
@@ -124,6 +133,22 @@
         <include
             layout="@layout/keyguard_status_bar"
             android:visibility="invisible" />
+
+        <ImageButton
+          android:layout_gravity="bottom|center_vertical|center_horizontal|center"
+          android:id="@+id/clear_notifications"
+          android:background="@drawable/dismiss_all_background"
+          android:visibility="gone"
+          android:layout_width="@dimen/dismiss_all_button_width"
+          android:layout_height="@dimen/dismiss_all_button_height"
+          android:layout_marginBottom="@dimen/dismiss_all_button_margin_bottom"
+          android:src="@drawable/dismiss_all_icon"
+          android:scaleType="centerInside"
+          android:elevation="@dimen/dismiss_all_button_elevation"
+          app:layout_constraintBottom_toBottomOf="parent"
+          app:layout_constraintLeft_toLeftOf="parent"
+          app:layout_constraintRight_toRightOf="parent"
+        />
 
         <Button
             android:id="@+id/report_rejected_touch"

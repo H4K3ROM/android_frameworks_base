@@ -29,7 +29,6 @@ import android.os.Handler;
 import android.os.UserHandle;
 import android.os.RemoteException;
 import android.util.Log;
-import android.view.Display;
 import android.view.InsetsController;
 import android.view.InsetsState;
 import android.view.SurfaceControl;
@@ -40,7 +39,7 @@ import android.view.animation.Interpolator;
 import com.android.systemui.shared.recents.view.AppTransitionAnimationSpecsFuture;
 import com.android.systemui.shared.recents.view.RecentsTransition;
 
-import lineageos.providers.LineageSettings;
+import com.android.internal.util.aicp.NavbarUtils;
 
 public class WindowManagerWrapper {
 
@@ -83,10 +82,6 @@ public class WindowManagerWrapper {
     public static final int WINDOWING_MODE_MULTI_WINDOW =
             WindowConfiguration.WINDOWING_MODE_MULTI_WINDOW;
 
-    public static final int WINDOWING_MODE_SPLIT_SCREEN_PRIMARY =
-            WindowConfiguration.WINDOWING_MODE_SPLIT_SCREEN_PRIMARY;
-    public static final int WINDOWING_MODE_SPLIT_SCREEN_SECONDARY =
-            WindowConfiguration.WINDOWING_MODE_SPLIT_SCREEN_SECONDARY;
     public static final int WINDOWING_MODE_FREEFORM = WindowConfiguration.WINDOWING_MODE_FREEFORM;
 
     public static final int ITYPE_EXTRA_NAVIGATION_BAR = InsetsState.ITYPE_EXTRA_NAVIGATION_BAR;
@@ -95,6 +90,7 @@ public class WindowManagerWrapper {
     public static final int ITYPE_RIGHT_TAPPABLE_ELEMENT = InsetsState.ITYPE_RIGHT_TAPPABLE_ELEMENT;
     public static final int ITYPE_BOTTOM_TAPPABLE_ELEMENT =
             InsetsState.ITYPE_BOTTOM_TAPPABLE_ELEMENT;
+    public static final int ITYPE_SIZE = InsetsState.SIZE;
 
     public static final int ANIMATION_DURATION_RESIZE = InsetsController.ANIMATION_DURATION_RESIZE;
     public static final Interpolator RESIZE_INTERPOLATOR = InsetsController.RESIZE_INTERPOLATOR;
@@ -197,10 +193,7 @@ public class WindowManagerWrapper {
      * @return whether there is a soft nav bar on specific display.
      */
     public boolean hasSoftNavigationBar(Context context, int displayId) {
-        if (displayId == Display.DEFAULT_DISPLAY &&
-                LineageSettings.System.getIntForUser(context.getContentResolver(),
-                        LineageSettings.System.FORCE_SHOW_NAVBAR, 0,
-                        UserHandle.USER_CURRENT) == 1) {
+        if (displayId == DEFAULT_DISPLAY && NavbarUtils.isEnabled(context)) {
             return true;
         }
         try {

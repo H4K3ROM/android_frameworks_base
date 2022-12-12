@@ -66,7 +66,6 @@ namespace android {
 #define IDMAP_MAGIC             0x504D4449
 
 #define APP_PACKAGE_ID      0x7f
-#define LINEAGESDK_PACKAGE_ID    0x3f
 #define SYS_PACKAGE_ID      0x01
 
 static const bool kDebugStringPoolNoisy = false;
@@ -2678,30 +2677,27 @@ bool ResTable_config::isBetterThan(const ResTable_config& o,
                 // DENSITY_ANY is now dealt with. We should look to
                 // pick a density bucket and potentially scale it.
                 // Any density is potentially useful
-                // because the system will scale it.  Scaling down
-                // is generally better than scaling up.
+                // because the system will scale it.  Always prefer
+                // scaling down.
                 int h = thisDensity;
                 int l = otherDensity;
                 bool bImBigger = true;
                 if (l > h) {
-                    int t = h;
-                    h = l;
-                    l = t;
+                    std::swap(l, h);
                     bImBigger = false;
                 }
 
-                if (requestedDensity >= h) {
-                    // requested value higher than both l and h, give h
+                if (h == requestedDensity) {
+                    // This handles the case where l == h == requestedDensity.
+                    // In that case, this and o are equally good so both
+                    // true and false are valid. This preserves previous
+                    // behavior.
                     return bImBigger;
-                }
-                if (l >= requestedDensity) {
+                } else if (l >= requestedDensity) {
                     // requested value lower than both l and h, give l
                     return !bImBigger;
-                }
-                // saying that scaling down is 2x better than up
-                if (((2 * l) - requestedDensity) * h > requestedDensity * requestedDensity) {
-                    return !bImBigger;
                 } else {
+                    // otherwise give h
                     return bImBigger;
                 }
             }
@@ -4391,7 +4387,7 @@ bool ResTable::getResourceName(uint32_t resID, bool allowUtf8, resource_name* ou
 
     if (p < 0) {
         if (Res_GETPACKAGE(resID)+1 == 0) {
-            ALOGW("No package identifier when getting name for resource number 0x%08x", resID);
+            ALOGV("No package identifier when getting name for resource number 0x%08x", resID);
         } else {
 #ifndef STATIC_ANDROIDFW_FOR_TOOLS
             ALOGW("No known package when getting name for resource number 0x%08x", resID);
@@ -5650,8 +5646,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
                 }
 
                 uint32_t packageId = Res_GETPACKAGE(rid) + 1;
-                if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID &&
-                        packageId != LINEAGESDK_PACKAGE_ID) {
+                if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID) {
                     outValue->dataType = Res_value::TYPE_DYNAMIC_REFERENCE;
                 }
                 outValue->data = rid;
@@ -5672,8 +5667,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
                         outValue->data = rid;
                         outValue->dataType = Res_value::TYPE_DYNAMIC_REFERENCE;
                         return true;
-                    } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID ||
-                            packageId == LINEAGESDK_PACKAGE_ID) {
+                    } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID) {
                         // We accept packageId's generated as 0x01 in order to support
                         // building the android system resources
                         outValue->data = rid;
@@ -5819,8 +5813,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
             }
 
             uint32_t packageId = Res_GETPACKAGE(rid) + 1;
-            if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID &&
-                    packageId != LINEAGESDK_PACKAGE_ID) {
+            if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID) {
                 outValue->dataType = Res_value::TYPE_DYNAMIC_ATTRIBUTE;
             }
             outValue->data = rid;
@@ -5835,8 +5828,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
                     outValue->data = rid;
                     outValue->dataType = Res_value::TYPE_DYNAMIC_ATTRIBUTE;
                     return true;
-                } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID ||
-                        packageId == LINEAGESDK_PACKAGE_ID) {
+                } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID) {
                     // We accept packageId's generated as 0x01 in order to support
                     // building the android system resources
                     outValue->data = rid;
@@ -7007,7 +6999,6 @@ DynamicRefTable::DynamicRefTable(uint8_t packageId, bool appAsLib)
     // Reserved package ids
     mLookupTable[APP_PACKAGE_ID] = APP_PACKAGE_ID;
     mLookupTable[SYS_PACKAGE_ID] = SYS_PACKAGE_ID;
-    mLookupTable[LINEAGESDK_PACKAGE_ID] = LINEAGESDK_PACKAGE_ID;
 }
 
 status_t DynamicRefTable::load(const ResTable_lib_header* const header)

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2017 The Android Open Source Project
- * Copyright (C) 2017-2018 The LineageOS Project
+ * Copyright (C) 2017 The LineageOS Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use mHost file
  * except in compliance with the License. You may obtain a copy of the License at
@@ -19,6 +19,8 @@ import android.content.Context;
 import android.os.Build;
 import android.util.Log;
 
+import androidx.annotation.Nullable;
+
 import com.android.systemui.dagger.SysUISingleton;
 import com.android.systemui.plugins.qs.QSFactory;
 import com.android.systemui.plugins.qs.QSIconView;
@@ -26,9 +28,11 @@ import com.android.systemui.plugins.qs.QSTile;
 import com.android.systemui.plugins.qs.QSTileView;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.external.CustomTile;
+import com.android.systemui.qs.tiles.AicpExtrasTile;
 import com.android.systemui.qs.tiles.AirplaneModeTile;
 import com.android.systemui.qs.tiles.AlarmTile;
 import com.android.systemui.qs.tiles.AmbientDisplayTile;
+import com.android.systemui.qs.tiles.AntiFlickerTile;
 import com.android.systemui.qs.tiles.AODTile;
 import com.android.systemui.qs.tiles.BatterySaverTile;
 import com.android.systemui.qs.tiles.BluetoothTile;
@@ -36,29 +40,41 @@ import com.android.systemui.qs.tiles.CaffeineTile;
 import com.android.systemui.qs.tiles.CameraToggleTile;
 import com.android.systemui.qs.tiles.CastTile;
 import com.android.systemui.qs.tiles.CellularTile;
+import com.android.systemui.qs.tiles.ColorCorrectionTile;
 import com.android.systemui.qs.tiles.ColorInversionTile;
+import com.android.systemui.qs.tiles.CompassTile;
 import com.android.systemui.qs.tiles.DataSaverTile;
+import com.android.systemui.qs.tiles.DataSwitchTile;
 import com.android.systemui.qs.tiles.DeviceControlsTile;
 import com.android.systemui.qs.tiles.DndTile;
 import com.android.systemui.qs.tiles.FlashlightTile;
 import com.android.systemui.qs.tiles.HeadsUpTile;
 import com.android.systemui.qs.tiles.HotspotTile;
 import com.android.systemui.qs.tiles.InternetTile;
+import com.android.systemui.qs.tiles.LiveDisplayTile;
 import com.android.systemui.qs.tiles.LocationTile;
 import com.android.systemui.qs.tiles.MicrophoneToggleTile;
+import com.android.systemui.qs.tiles.MusicTile;
 import com.android.systemui.qs.tiles.NfcTile;
 import com.android.systemui.qs.tiles.NightDisplayTile;
+import com.android.systemui.qs.tiles.OnTheGoTile;
+import com.android.systemui.qs.tiles.OneHandedModeTile;
 import com.android.systemui.qs.tiles.PowerShareTile;
-import com.android.systemui.qs.tiles.ProfilesTile;
+import com.android.systemui.qs.tiles.QRCodeScannerTile;
+import com.android.systemui.qs.tiles.PreferredNetworkTile;
 import com.android.systemui.qs.tiles.QuickAccessWalletTile;
-import com.android.systemui.qs.tiles.ReadingModeTile;
+import com.android.systemui.qs.tiles.RebootTile;
 import com.android.systemui.qs.tiles.ReduceBrightColorsTile;
+import com.android.systemui.qs.tiles.ReadingModeTile;
+import com.android.systemui.qs.tiles.RefreshRateTile;
 import com.android.systemui.qs.tiles.RotationLockTile;
 import com.android.systemui.qs.tiles.ScreenRecordTile;
+import com.android.systemui.qs.tiles.ScreenshotTile;
+import com.android.systemui.qs.tiles.SmartPixelsTile;
+import com.android.systemui.qs.tiles.SoundTile;
 import com.android.systemui.qs.tiles.SyncTile;
 import com.android.systemui.qs.tiles.UiModeNightTile;
 import com.android.systemui.qs.tiles.UsbTetherTile;
-import com.android.systemui.qs.tiles.UserTile;
 import com.android.systemui.qs.tiles.VpnTile;
 import com.android.systemui.qs.tiles.WifiTile;
 import com.android.systemui.qs.tiles.WorkModeTile;
@@ -79,6 +95,7 @@ public class QSFactoryImpl implements QSFactory {
     private final Provider<BluetoothTile> mBluetoothTileProvider;
     private final Provider<CellularTile> mCellularTileProvider;
     private final Provider<DndTile> mDndTileProvider;
+    private final Provider<ColorCorrectionTile> mColorCorrectionTileProvider;
     private final Provider<ColorInversionTile> mColorInversionTileProvider;
     private final Provider<AirplaneModeTile> mAirplaneModeTileProvider;
     private final Provider<WorkModeTile> mWorkModeTileProvider;
@@ -87,7 +104,6 @@ public class QSFactoryImpl implements QSFactory {
     private final Provider<LocationTile> mLocationTileProvider;
     private final Provider<CastTile> mCastTileProvider;
     private final Provider<HotspotTile> mHotspotTileProvider;
-    private final Provider<UserTile> mUserTileProvider;
     private final Provider<BatterySaverTile> mBatterySaverTileProvider;
     private final Provider<DataSaverTile> mDataSaverTileProvider;
     private final Provider<NightDisplayTile> mNightDisplayTileProvider;
@@ -101,16 +117,30 @@ public class QSFactoryImpl implements QSFactory {
     private final Provider<DeviceControlsTile> mDeviceControlsTileProvider;
     private final Provider<AlarmTile> mAlarmTileProvider;
     private final Provider<QuickAccessWalletTile> mQuickAccessWalletTileProvider;
+    private final Provider<QRCodeScannerTile> mQRCodeScannerTileProvider;
+    private final Provider<OneHandedModeTile> mOneHandedModeTileProvider;
+    private final Provider<LiveDisplayTile> mLiveDisplayTileProvider;
+    private final Provider<ReadingModeTile> mReadingModeTileProvider;
+    private final Provider<AntiFlickerTile> mAntiFlickerTileProvider;
+    private final Provider<RefreshRateTile> mRefreshRateTileProvider;
+    private final Provider<AicpExtrasTile> mAicpExtrasTileProvider;
     private final Provider<AmbientDisplayTile> mAmbientDisplayTileProvider;
     private final Provider<AODTile> mAODTileProvider;
     private final Provider<CaffeineTile> mCaffeineTileProvider;
     private final Provider<HeadsUpTile> mHeadsUpTileProvider;
-    private final Provider<ReadingModeTile> mReadingModeTileProvider;
     private final Provider<SyncTile> mSyncTileProvider;
     private final Provider<PowerShareTile> mPowerShareTileProvider;
-    private final Provider<ProfilesTile> mProfilesTileProvider;
     private final Provider<UsbTetherTile> mUsbTetherTileProvider;
+    private final Provider<RebootTile> mRebootTileProvider;
+    private final Provider<CompassTile> mCompassTileProvider;
+    private final Provider<MusicTile> mMusicTileProvider;
+    private final Provider<DataSwitchTile> mDataSwitchTileProvider;
+    private final Provider<SoundTile> mSoundTileProvider;
     private final Provider<VpnTile> mVpnTileProvider;
+    private final Provider<OnTheGoTile> mOnTheGoTileProvider;
+    private final Provider<SmartPixelsTile> mSmartPixelsTileProvider;
+    private final Provider<ScreenshotTile> mScreenshotTileProvider;
+    private final Provider<PreferredNetworkTile> mPreferredNetworkTileProvider;
 
     private final Lazy<QSHost> mQsHostLazy;
     private final Provider<CustomTile.Builder> mCustomTileBuilderProvider;
@@ -132,7 +162,6 @@ public class QSFactoryImpl implements QSFactory {
             Provider<LocationTile> locationTileProvider,
             Provider<CastTile> castTileProvider,
             Provider<HotspotTile> hotspotTileProvider,
-            Provider<UserTile> userTileProvider,
             Provider<BatterySaverTile> batterySaverTileProvider,
             Provider<DataSaverTile> dataSaverTileProvider,
             Provider<NightDisplayTile> nightDisplayTileProvider,
@@ -146,16 +175,31 @@ public class QSFactoryImpl implements QSFactory {
             Provider<DeviceControlsTile> deviceControlsTileProvider,
             Provider<AlarmTile> alarmTileProvider,
             Provider<QuickAccessWalletTile> quickAccessWalletTileProvider,
+            Provider<QRCodeScannerTile> qrCodeScannerTileProvider,
+            Provider<OneHandedModeTile> oneHandedModeTileProvider,
+            Provider<ColorCorrectionTile> colorCorrectionTileProvider,
+            Provider<LiveDisplayTile> liveDisplayTileProvider,
+            Provider<ReadingModeTile> readingModeTileProvider,
+            Provider<AntiFlickerTile> antiFlickerTileProvider,
+            Provider<RefreshRateTile> refreshRateTileProvider,
+            Provider<AicpExtrasTile> aicpExtrasTileProvider,
             Provider<AmbientDisplayTile> ambientDisplayTileProvider,
             Provider<AODTile> aodTileProvider,
             Provider<CaffeineTile> caffeineTileProvider,
             Provider<HeadsUpTile> headsUpTileProvider,
             Provider<PowerShareTile> powerShareTileProvider,
-            Provider<ProfilesTile> profilesTileProvider,
-            Provider<ReadingModeTile> readingModeTileProvider,
             Provider<SyncTile> syncTileProvider,
             Provider<UsbTetherTile> usbTetherTileProvider,
-            Provider<VpnTile> vpnTileProvider) {
+            Provider<RebootTile> rebootTileProvider,
+            Provider<CompassTile> compassTileProvider,
+            Provider<MusicTile> musicTileProvider,
+            Provider<DataSwitchTile> dataSwitchTileProvider,
+            Provider<SoundTile> soundTileProvider,
+            Provider<VpnTile> vpnTileProvider,
+            Provider<OnTheGoTile> onTheGoTileProvider,
+            Provider<SmartPixelsTile> smartPixelsTileProvider,
+            Provider<ScreenshotTile> screenshotTileProvider,
+            Provider<PreferredNetworkTile> preferredNetworkTileProvider) {
         mQsHostLazy = qsHostLazy;
         mCustomTileBuilderProvider = customTileBuilderProvider;
 
@@ -172,7 +216,6 @@ public class QSFactoryImpl implements QSFactory {
         mLocationTileProvider = locationTileProvider;
         mCastTileProvider = castTileProvider;
         mHotspotTileProvider = hotspotTileProvider;
-        mUserTileProvider = userTileProvider;
         mBatterySaverTileProvider = batterySaverTileProvider;
         mDataSaverTileProvider = dataSaverTileProvider;
         mNightDisplayTileProvider = nightDisplayTileProvider;
@@ -186,19 +229,36 @@ public class QSFactoryImpl implements QSFactory {
         mDeviceControlsTileProvider = deviceControlsTileProvider;
         mAlarmTileProvider = alarmTileProvider;
         mQuickAccessWalletTileProvider = quickAccessWalletTileProvider;
+        mQRCodeScannerTileProvider = qrCodeScannerTileProvider;
+        mOneHandedModeTileProvider = oneHandedModeTileProvider;
+        mColorCorrectionTileProvider = colorCorrectionTileProvider;
+        mLiveDisplayTileProvider = liveDisplayTileProvider;
+        mReadingModeTileProvider = readingModeTileProvider;
+        mAntiFlickerTileProvider = antiFlickerTileProvider;
+        mRefreshRateTileProvider = refreshRateTileProvider;
+        mAicpExtrasTileProvider = aicpExtrasTileProvider;
         mAmbientDisplayTileProvider = ambientDisplayTileProvider;
         mAODTileProvider = aodTileProvider;
         mCaffeineTileProvider = caffeineTileProvider;
         mHeadsUpTileProvider = headsUpTileProvider;
-        mReadingModeTileProvider = readingModeTileProvider;
         mSyncTileProvider = syncTileProvider;
         mPowerShareTileProvider = powerShareTileProvider;
-        mProfilesTileProvider = profilesTileProvider;
         mUsbTetherTileProvider = usbTetherTileProvider;
+        mRebootTileProvider = rebootTileProvider;
+        mCompassTileProvider = compassTileProvider;
+        mMusicTileProvider = musicTileProvider;
+        mDataSwitchTileProvider = dataSwitchTileProvider;
+        mSoundTileProvider = soundTileProvider;
         mVpnTileProvider = vpnTileProvider;
+        mOnTheGoTileProvider = onTheGoTileProvider;
+        mSmartPixelsTileProvider = smartPixelsTileProvider;
+        mScreenshotTileProvider = screenshotTileProvider;
+        mPreferredNetworkTileProvider = preferredNetworkTileProvider;
     }
 
-    public QSTile createTile(String tileSpec) {
+    /** Creates a tile with a type based on {@code tileSpec} */
+    @Nullable
+    public final QSTile createTile(String tileSpec) {
         QSTileImpl tile = createTileInternal(tileSpec);
         if (tile != null) {
             tile.initialize();
@@ -207,7 +267,8 @@ public class QSFactoryImpl implements QSFactory {
         return tile;
     }
 
-    private QSTileImpl createTileInternal(String tileSpec) {
+    @Nullable
+    protected QSTileImpl createTileInternal(String tileSpec) {
         switch (tileSpec) {
             // Stock tiles.
             case "wifi":
@@ -236,8 +297,6 @@ public class QSFactoryImpl implements QSFactory {
                 return mCastTileProvider.get();
             case "hotspot":
                 return mHotspotTileProvider.get();
-            case "user":
-                return mUserTileProvider.get();
             case "battery":
                 return mBatterySaverTileProvider.get();
             case "saver":
@@ -262,7 +321,23 @@ public class QSFactoryImpl implements QSFactory {
                 return mAlarmTileProvider.get();
             case "wallet":
                 return mQuickAccessWalletTileProvider.get();
+            case "qr_code_scanner":
+                return mQRCodeScannerTileProvider.get();
+            case "onehanded":
+                return mOneHandedModeTileProvider.get();
+            case "color_correction":
+                return mColorCorrectionTileProvider.get();
             // Additional tiles.
+            case "livedisplay":
+                return mLiveDisplayTileProvider.get();
+            case "reading_mode":
+                return mReadingModeTileProvider.get();
+            case "anti_flicker":
+                return mAntiFlickerTileProvider.get();
+            case "refresh_rate":
+                return mRefreshRateTileProvider.get();
+            case "aicp_extras":
+                return mAicpExtrasTileProvider.get();
             case "ambient_display":
                 return mAmbientDisplayTileProvider.get();
             case "aod":
@@ -271,18 +346,32 @@ public class QSFactoryImpl implements QSFactory {
                 return mCaffeineTileProvider.get();
             case "heads_up":
                 return mHeadsUpTileProvider.get();
-            case "reading_mode":
-                return mReadingModeTileProvider.get();
             case "sync":
                 return mSyncTileProvider.get();
             case "powershare":
                 return mPowerShareTileProvider.get();
-            case "profiles":
-                return mProfilesTileProvider.get();
             case "usb_tether":
                 return mUsbTetherTileProvider.get();
+            case "reboot":
+                return mRebootTileProvider.get();
+            case "compass":
+                return mCompassTileProvider.get();
+            case "music":
+                return mMusicTileProvider.get();
+            case "dataswitch":
+                return mDataSwitchTileProvider.get();
+            case "sound":
+                return mSoundTileProvider.get();
             case "vpn":
                 return mVpnTileProvider.get();
+            case "onthego":
+                return mOnTheGoTileProvider.get();
+            case "smartpixels":
+                return mSmartPixelsTileProvider.get();
+            case "screenshot":
+                return mScreenshotTileProvider.get();
+            case "preferred_network":
+                return mPreferredNetworkTileProvider.get();
         }
 
         // Custom tiles

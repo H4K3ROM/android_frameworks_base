@@ -43,6 +43,9 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadow.api.Shadow;
 
+import java.util.Arrays;
+import java.util.List;
+
 @RunWith(RobolectricTestRunner.class)
 @Config(shadows = {ShadowBluetoothAdapter.class})
 public class A2dpProfileTest {
@@ -57,6 +60,8 @@ public class A2dpProfileTest {
     private BluetoothDevice mDevice;
     @Mock
     private BluetoothA2dp mBluetoothA2dp;
+    @Mock
+    private BluetoothAdapter mBluetoothAdapter;
     private BluetoothProfile.ServiceListener mServiceListener;
 
     private A2dpProfile mProfile;
@@ -69,7 +74,8 @@ public class A2dpProfileTest {
         mProfile = new A2dpProfile(mContext, mDeviceManager, mProfileManager);
         mServiceListener = mShadowBluetoothAdapter.getServiceListener();
         mServiceListener.onServiceConnected(BluetoothProfile.A2DP, mBluetoothA2dp);
-        when(mBluetoothA2dp.getActiveDevice()).thenReturn(mDevice);
+        when(mBluetoothAdapter.getActiveDevices(eq(BluetoothProfile.A2DP)))
+                .thenReturn(Arrays.asList(mDevice));
     }
 
     @Test
@@ -130,7 +136,7 @@ public class A2dpProfileTest {
     private static String KNOWN_CODEC_LABEL = "Use high quality audio: %1$s";
     private static String UNKNOWN_CODEC_LABEL = "Use high quality audio";
     private static String[] CODEC_NAMES =
-            new String[]{"Default", "SBC", "AAC", "aptX", "aptX HD", "LDAC", "aptX Adaptive", "aptX TWS+"};
+            new String[]{"Default", "SBC", "AAC", "aptX", "aptX HD", "LDAC"};
 
     /**
      * Helper for setting up several tests of getHighQualityAudioOptionLabel
@@ -147,7 +153,7 @@ public class A2dpProfileTest {
 
         final Resources res = mock(Resources.class);
         when(mContext.getResources()).thenReturn(res);
-        when(res.getStringArray(eq(R.array.bluetooth_a2dp_codec_titles_cm)))
+        when(res.getStringArray(eq(R.array.bluetooth_a2dp_codec_titles)))
                 .thenReturn(CODEC_NAMES);
 
         // Most tests want to simulate optional codecs being supported by the device, so do that
@@ -179,7 +185,7 @@ public class A2dpProfileTest {
                 BluetoothProfile.STATE_CONNECTED);
         BluetoothCodecStatus status = mock(BluetoothCodecStatus.class);
         BluetoothCodecConfig config = mock(BluetoothCodecConfig.class);
-        BluetoothCodecConfig[] configs = {config};
+        List<BluetoothCodecConfig> configs = Arrays.asList(config);
         when(mBluetoothA2dp.getCodecStatus(mDevice)).thenReturn(status);
         when(status.getCodecsSelectableCapabilities()).thenReturn(configs);
 
@@ -194,15 +200,14 @@ public class A2dpProfileTest {
                 BluetoothProfile.STATE_CONNECTED);
         BluetoothCodecStatus status = mock(BluetoothCodecStatus.class);
         BluetoothCodecConfig config = mock(BluetoothCodecConfig.class);
-        BluetoothCodecConfig[] configs = {config};
+        List<BluetoothCodecConfig> configs = Arrays.asList(config);
         when(mBluetoothA2dp.getCodecStatus(mDevice)).thenReturn(status);
         when(status.getCodecsSelectableCapabilities()).thenReturn(configs);
 
         when(config.isMandatoryCodec()).thenReturn(false);
         when(config.getCodecType()).thenReturn(4);
-        when(config.getCodecName()).thenReturn("LDAC");
         assertThat(mProfile.getHighQualityAudioOptionLabel(mDevice)).isEqualTo(
-                String.format(KNOWN_CODEC_LABEL, config.getCodecName()));
+                String.format(KNOWN_CODEC_LABEL, "LDAC"));
     }
 
     @Test

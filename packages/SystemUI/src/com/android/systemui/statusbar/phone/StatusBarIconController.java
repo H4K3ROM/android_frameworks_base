@@ -14,13 +14,18 @@
 
 package com.android.systemui.statusbar.phone;
 
+import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_BLUETOOTH;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_ICON;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_MOBILE;
+import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_NETWORK_TRAFFIC;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_WIFI;
+import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_IMS;
 
 import android.annotation.Nullable;
 import android.content.Context;
 import android.os.Bundle;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.ArraySet;
 import android.view.Gravity;
@@ -38,15 +43,23 @@ import com.android.systemui.R;
 import com.android.systemui.dagger.SysUISingleton;
 import com.android.systemui.demomode.DemoModeCommandReceiver;
 import com.android.systemui.flags.FeatureFlags;
+import com.android.systemui.flags.Flags;
 import com.android.systemui.plugins.DarkIconDispatcher;
 import com.android.systemui.plugins.DarkIconDispatcher.DarkReceiver;
+import com.android.systemui.statusbar.StatusBarBluetoothView;
 import com.android.systemui.statusbar.StatusBarIconView;
 import com.android.systemui.statusbar.StatusBarMobileView;
 import com.android.systemui.statusbar.StatusBarWifiView;
+import com.android.systemui.statusbar.StatusBarImsView;
 import com.android.systemui.statusbar.StatusIconDisplayable;
+import com.android.systemui.statusbar.connectivity.ImsIconState;
+import com.android.systemui.statusbar.phone.PhoneStatusBarPolicy.BluetoothIconState;
 import com.android.systemui.statusbar.phone.StatusBarSignalPolicy.CallIndicatorIconState;
 import com.android.systemui.statusbar.phone.StatusBarSignalPolicy.MobileIconState;
 import com.android.systemui.statusbar.phone.StatusBarSignalPolicy.WifiIconState;
+import com.android.systemui.statusbar.policy.NetworkTraffic;
+import com.android.systemui.statusbar.policy.StatusBarNetworkTraffic;
+import com.android.systemui.tuner.TunerService;
 import com.android.systemui.util.Assert;
 
 import java.util.ArrayList;
@@ -77,6 +90,8 @@ public interface StatusBarIconController {
     /** */
     void setSignalIcon(String slot, WifiIconState state);
     /** */
+    void setBluetoothIcon(String slot, BluetoothIconState state);
+    /** */
     void setMobileIcons(String slot, List<MobileIconState> states);
     /**
      * Display the no calling & SMS icons.
@@ -87,6 +102,7 @@ public interface StatusBarIconController {
      */
     void setNoCallingIcons(String slot, List<CallIndicatorIconState> states);
     public void setIconVisibility(String slot, boolean b);
+    public void setImsIcon(String slot, ImsIconState state);
 
     /**
      * Sets the live region mode for the icon
@@ -238,7 +254,7 @@ public interface StatusBarIconController {
     /**
      * Turns info from StatusBarIconController into ImageViews in a ViewGroup.
      */
-    class IconManager implements DemoModeCommandReceiver {
+    class IconManager implements DemoModeCommandReceiver, TunerService.Tunable {
         private final FeatureFlags mFeatureFlags;
         protected final ViewGroup mGroup;
         protected final Context mContext;
@@ -254,12 +270,21 @@ public interface StatusBarIconController {
 
         protected ArrayList<String> mBlockList = new ArrayList<>();
 
+        private final boolean mNewIconStyle;
+
+        private boolean mIsOldSignalStyle = false;
+        private boolean mShowWifiStandard;
+
+        private static final String SHOW_WIFI_STANDARD_ICON = Settings.Secure.SHOW_WIFI_STANDARD_ICON;
+
         public IconManager(ViewGroup group, FeatureFlags featureFlags) {
             mFeatureFlags = featureFlags;
             mGroup = group;
             mContext = group.getContext();
             mIconSize = mContext.getResources().getDimensionPixelSize(
                     com.android.internal.R.dimen.status_bar_icon_size);
+            mNewIconStyle = Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.STATUSBAR_COLORED_ICONS, 0, UserHandle.USER_CURRENT) == 1;
         }
 
         public boolean isDemoable() {
@@ -312,6 +337,15 @@ public interface StatusBarIconController {
 
                 case TYPE_MOBILE:
                     return addMobileIcon(index, slot, holder.getMobileState());
+
+                case TYPE_IMS:
+                    return addImsIcon(index, slot, holder.getImsState());
+
+                case TYPE_NETWORK_TRAFFIC:
+                    return addNetworkTraffic(index, slot);
+
+                case TYPE_BLUETOOTH:
+                    return addBluetoothIcon(index, slot, holder.getBluetoothState());
             }
 
             return null;
@@ -321,7 +355,15 @@ public interface StatusBarIconController {
         protected StatusBarIconView addIcon(int index, String slot, boolean blocked,
                 StatusBarIcon icon) {
             StatusBarIconView view = onCreateStatusBarIconView(slot, blocked);
+            view.setIconStyle(mNewIconStyle);
             view.set(icon);
+            mGroup.addView(view, index, onCreateLayoutParams());
+            return view;
+        }
+
+        protected StatusBarImsView addImsIcon(int index, String slot, ImsIconState state) {
+            StatusBarImsView view = onCreateStatusBarImsView(slot);
+            view.applyImsState(state);
             mGroup.addView(view, index, onCreateLayoutParams());
             return view;
         }
@@ -331,10 +373,17 @@ public interface StatusBarIconController {
             StatusBarWifiView view = onCreateStatusBarWifiView(slot);
             view.applyWifiState(state);
             mGroup.addView(view, index, onCreateLayoutParams());
+            Dependency.get(TunerService.class).addTunable(this, SHOW_WIFI_STANDARD_ICON);
 
             if (mIsInDemoMode) {
                 mDemoStatusIcons.addDemoWifiView(state);
             }
+            return view;
+        }
+
+        protected StatusBarNetworkTraffic addNetworkTraffic(int index, String slot) {
+            StatusBarNetworkTraffic view = onCreateNetworkTraffic(slot);
+            mGroup.addView(view, index, onCreateLayoutParams());
             return view;
         }
 
@@ -343,6 +392,7 @@ public interface StatusBarIconController {
             StatusBarMobileView view = onCreateStatusBarMobileView(slot);
             view.applyMobileState(state);
             mGroup.addView(view, index, onCreateLayoutParams());
+            view.updateDisplayType(mIsOldSignalStyle);
 
             if (mIsInDemoMode) {
                 mDemoStatusIcons.addMobileView(state);
@@ -350,8 +400,21 @@ public interface StatusBarIconController {
             return view;
         }
 
+        protected StatusBarBluetoothView addBluetoothIcon(
+                int index, String slot, BluetoothIconState state) {
+            StatusBarBluetoothView view = onCreateStatusBarBluetoothView(slot);
+            view.applyBluetoothState(state);
+            mGroup.addView(view, index, onCreateLayoutParams());
+            return view;
+        }
+
         private StatusBarIconView onCreateStatusBarIconView(String slot, boolean blocked) {
             return new StatusBarIconView(mContext, slot, null, blocked);
+        }
+
+        private StatusBarImsView onCreateStatusBarImsView(String slot) {
+            StatusBarImsView view = StatusBarImsView.fromContext(mContext, slot);
+            return view;
         }
 
         private StatusBarWifiView onCreateStatusBarWifiView(String slot) {
@@ -361,7 +424,19 @@ public interface StatusBarIconController {
 
         private StatusBarMobileView onCreateStatusBarMobileView(String slot) {
             StatusBarMobileView view = StatusBarMobileView.fromContext(
-                            mContext, slot, mFeatureFlags.isCombinedStatusBarSignalIconsEnabled());
+                            mContext, slot,
+                    mFeatureFlags.isEnabled(Flags.COMBINED_STATUS_BAR_SIGNAL_ICONS));
+            return view;
+        }
+
+        private StatusBarNetworkTraffic onCreateNetworkTraffic(String slot) {
+            StatusBarNetworkTraffic view = new StatusBarNetworkTraffic(mContext);
+//            view.setPadding(4, 0, 4, 0);
+            return view;
+        }
+
+        private StatusBarBluetoothView onCreateStatusBarBluetoothView(String slot) {
+            StatusBarBluetoothView view = StatusBarBluetoothView.fromContext(mContext, slot);
             return view;
         }
 
@@ -371,6 +446,7 @@ public interface StatusBarIconController {
 
         protected void destroy() {
             mGroup.removeAllViews();
+            Dependency.get(TunerService.class).removeTunable(this);
         }
 
         protected void onIconExternal(int viewIndex, int height) {
@@ -406,8 +482,10 @@ public interface StatusBarIconController {
         }
 
         public void onSetIcon(int viewIndex, StatusBarIcon icon) {
-            StatusBarIconView view = (StatusBarIconView) mGroup.getChildAt(viewIndex);
-            view.set(icon);
+            View view = mGroup.getChildAt(viewIndex);
+            if (view instanceof StatusBarIconView) {
+                ((StatusBarIconView) view).set(icon);
+            }
         }
 
         public void onSetIconHolder(int viewIndex, StatusBarIconHolder holder) {
@@ -418,9 +496,15 @@ public interface StatusBarIconController {
                 case TYPE_WIFI:
                     onSetSignalIcon(viewIndex, holder.getWifiState());
                     return;
-
                 case TYPE_MOBILE:
                     onSetMobileIcon(viewIndex, holder.getMobileState());
+                    return;
+                case TYPE_IMS:
+                    onSetImsIcon(viewIndex, holder.getImsState());
+                    return;
+                case TYPE_BLUETOOTH:
+                    onSetBluetoothIcon(viewIndex, holder.getBluetoothState());
+                    return;
                 default:
                     break;
             }
@@ -445,6 +529,20 @@ public interface StatusBarIconController {
 
             if (mIsInDemoMode) {
                 mDemoStatusIcons.updateMobileState(state);
+            }
+        }
+
+        public void onSetImsIcon(int viewIndex, ImsIconState state) {
+            StatusBarImsView view = (StatusBarImsView) mGroup.getChildAt(viewIndex);
+            if (view != null) {
+                view.applyImsState(state);
+            }
+        }
+
+        public void onSetBluetoothIcon(int viewIndex, BluetoothIconState state) {
+            StatusBarBluetoothView view = (StatusBarBluetoothView) mGroup.getChildAt(viewIndex);
+            if (view != null) {
+                view.applyBluetoothState(state);
             }
         }
 
@@ -482,6 +580,42 @@ public interface StatusBarIconController {
 
         protected DemoStatusIcons createDemoStatusIcons() {
             return new DemoStatusIcons((LinearLayout) mGroup, mIconSize, mFeatureFlags);
+        }
+
+        protected void setMobileSignalStyle(boolean isOldSignalStyle) {
+            mIsOldSignalStyle = isOldSignalStyle;
+        }
+
+        protected void updateMobileIconStyle() {
+            for (int i = 0; i < mGroup.getChildCount(); i++) {
+                final View child = mGroup.getChildAt(i);
+                if (child instanceof StatusBarMobileView) {
+                    ((StatusBarMobileView) child).updateDisplayType(mIsOldSignalStyle);
+                }
+            }
+        }
+
+        @Override
+        public void onTuningChanged(String key, String newValue) {
+            switch (key) {
+                case SHOW_WIFI_STANDARD_ICON:
+                    mShowWifiStandard =
+                        TunerService.parseIntegerSwitch(newValue, false);
+                    updateShowWifiStandard();
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        private void updateShowWifiStandard() {
+            for (int i = 0; i < mGroup.getChildCount(); i++) {
+                View child = mGroup.getChildAt(i);
+                if (child instanceof StatusBarWifiView) {
+                    ((StatusBarWifiView) child).updateWifiState(mShowWifiStandard);
+                    return;
+                }
+            }
         }
     }
 }

@@ -32,11 +32,13 @@ import static android.view.Surface.ROTATION_90;
 
 import android.annotation.IntDef;
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Insets;
 import android.graphics.Rect;
+import android.os.RemoteException;
 import android.os.UserHandle;
 import android.os.SystemProperties;
 import android.provider.Settings;
@@ -49,17 +51,18 @@ import android.view.Gravity;
 import android.view.InsetsSource;
 import android.view.InsetsState;
 import android.view.Surface;
+import android.view.WindowManagerGlobal;
 
 import androidx.annotation.VisibleForTesting;
 
 import com.android.internal.R;
 import com.android.internal.policy.SystemBarUtils;
 
-import lineageos.providers.LineageSettings;
-
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Objects;
+
+import com.android.internal.util.aicp.NavbarUtils;
 
 /**
  * Contains information about the layout-properties of a display. This refers to internal layout
@@ -339,6 +342,12 @@ public class DisplayLayout {
         return navigationBarPosition(res, mWidth, mHeight, mRotation);
     }
 
+    /** @return {@link DisplayCutout} instance. */
+    @Nullable
+    public DisplayCutout getDisplayCutout() {
+        return mCutout;
+    }
+
     /**
      * Calculates the stable insets if we already have the non-decor insets.
      */
@@ -419,8 +428,9 @@ public class DisplayLayout {
         }
         final DisplayCutout.CutoutPathParserInfo info = cutout.getCutoutPathParserInfo();
         final DisplayCutout.CutoutPathParserInfo newInfo = new DisplayCutout.CutoutPathParserInfo(
-                info.getDisplayWidth(), info.getDisplayHeight(), info.getDensity(),
-                info.getCutoutSpec(), rotation, info.getScale());
+                info.getDisplayWidth(), info.getDisplayHeight(), info.getPhysicalDisplayWidth(),
+                info.getPhysicalDisplayHeight(), info.getDensity(), info.getCutoutSpec(), rotation,
+                info.getScale(), info.getPhysicalPixelDisplaySizeRatio());
         return computeSafeInsets(
                 DisplayCutout.constructDisplayCutout(newBounds, waterfallInsets, newInfo),
                 rotated ? displayHeight : displayWidth,
@@ -485,21 +495,20 @@ public class DisplayLayout {
         }
     }
 
+    static boolean hasSoftNavigationBar(Context context, int displayId) {
+        if (displayId == Display.DEFAULT_DISPLAY && NavbarUtils.isEnabled(context)) {
+            return true;
+        }
+        try {
+            return WindowManagerGlobal.getWindowManagerService().hasNavigationBar(displayId);
+        } catch (RemoteException e) {
+            return false;
+        }
+    }
+
     static boolean hasNavigationBar(DisplayInfo info, Context context, int displayId) {
         if (displayId == Display.DEFAULT_DISPLAY) {
-            if (LineageSettings.System.getIntForUser(context.getContentResolver(),
-                    LineageSettings.System.FORCE_SHOW_NAVBAR, 0,
-                    UserHandle.USER_CURRENT) == 1) {
-                return true;
-            }
-            // Allow a system property to override this. Used by the emulator.
-            final String navBarOverride = SystemProperties.get("qemu.hw.mainkeys");
-            if ("1".equals(navBarOverride)) {
-                return false;
-            } else if ("0".equals(navBarOverride)) {
-                return true;
-            }
-            return context.getResources().getBoolean(R.bool.config_showNavigationBar);
+            return hasSoftNavigationBar(context, displayId);
         } else {
             boolean isUntrustedVirtualDisplay = info.type == Display.TYPE_VIRTUAL
                     && info.ownerUid != SYSTEM_UID;

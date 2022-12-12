@@ -19,7 +19,7 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 
 import com.android.internal.statusbar.IStatusBarService;
-import com.android.systemui.SystemUI;
+import com.android.systemui.CoreStartable;
 import com.android.systemui.dagger.SysUISingleton;
 import com.android.systemui.plugins.GlobalActions;
 import com.android.systemui.plugins.GlobalActions.GlobalActionsManager;
@@ -33,10 +33,11 @@ import javax.inject.Inject;
 import javax.inject.Provider;
 
 /**
- * Manages power menu plugins and communicates power menu actions to the StatusBar.
+ * Manages power menu plugins and communicates power menu actions to the CentralSurfaces.
  */
 @SysUISingleton
-public class GlobalActionsComponent extends SystemUI implements Callbacks, GlobalActionsManager {
+public class GlobalActionsComponent extends CoreStartable
+        implements Callbacks, GlobalActionsManager {
 
     private final CommandQueue mCommandQueue;
     private final ExtensionController mExtensionController;
@@ -79,8 +80,8 @@ public class GlobalActionsComponent extends SystemUI implements Callbacks, Globa
     }
 
     @Override
-    public void handleShowShutdownUi(boolean isReboot, String reason, boolean rebootCustom) {
-        mExtension.get().showShutdownUi(isReboot, reason, rebootCustom);
+    public void handleShowShutdownUi(boolean isReboot, String reason, boolean advancedReboot) {
+        mExtension.get().showShutdownUi(isReboot, reason, advancedReboot);
     }
 
     @Override
@@ -115,9 +116,17 @@ public class GlobalActionsComponent extends SystemUI implements Callbacks, Globa
     }
 
     @Override
-    public void reboot(boolean safeMode, String reason) {
+    public void reboot(boolean safeMode) {
         try {
-            mBarService.reboot(safeMode, reason);
+            mBarService.reboot(safeMode);
+        } catch (RemoteException e) {
+        }
+    }
+
+    @Override
+    public void advancedReboot(String mode) {
+        try {
+            mBarService.advancedReboot(mode);
         } catch (RemoteException e) {
         }
     }

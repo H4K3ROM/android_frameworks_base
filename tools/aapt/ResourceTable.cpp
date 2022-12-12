@@ -2475,11 +2475,10 @@ void ResourceTable::reportError(void* accessorCookie, const char* fmt, ...)
 {
     if (accessorCookie != NULL && fmt != NULL) {
         AccessorCookie* ac = (AccessorCookie*)accessorCookie;
-        int retval=0;
         char buf[1024];
         va_list ap;
         va_start(ap, fmt);
-        retval = vsnprintf(buf, sizeof(buf), fmt, ap);
+        vsnprintf(buf, sizeof(buf), fmt, ap);
         va_end(ap);
         ac->sourcePos.error("Error: %s (at '%s' with value '%s').\n",
                             buf, ac->attr.string(), ac->value.string());
@@ -2893,9 +2892,8 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<const ResourceFilter>& 
     for (size_t i = 0; i < basePackageCount; i++) {
         size_t packageId = table.getBasePackageId(i);
         String16 packageName(table.getBasePackageName(i));
-        if (packageId > 0x01 && packageId != 0x7f && packageId != 0x3f &&
-                packageName != String16("android") &&
-                packageName != String16("lineageos.platform")) {
+        if (packageId > 0x01 && packageId != 0x7f &&
+                packageName != String16("android")) {
             libraryPackages.add(sp<Package>(new Package(packageName, packageId)));
         }
     }

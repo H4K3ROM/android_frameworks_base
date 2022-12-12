@@ -15,6 +15,7 @@
  */
 package android.hardware.camera2.impl;
 
+import android.app.ActivityThread;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraDevice;
@@ -28,6 +29,7 @@ import android.hardware.camera2.utils.TaskSingleDrainer;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.util.Log;
 import android.view.Surface;
 
@@ -130,6 +132,18 @@ public class CameraCaptureSessionImpl extends CameraCaptureSession
             mClosed = true; // do not fire any other callbacks, do not allow any other work
             Log.e(TAG, mIdString + "Failed to create capture session; configuration failed");
             mConfigureSuccess = false;
+        }
+
+        setSkipUnconfigure();
+    }
+
+    private void setSkipUnconfigure() {
+        String packageName = ActivityThread.currentOpPackageName();
+        List<String> packageList = Arrays.asList(SystemProperties.get(
+                "vendor.camera.skip_unconfigure.packagelist", packageName).split(","));
+
+        if (packageList.contains(packageName)) {
+            mSkipUnconfigure = true;
         }
     }
 
@@ -649,6 +663,21 @@ public class CameraCaptureSessionImpl extends CameraCaptureSession
                     final long ident = Binder.clearCallingIdentity();
                     try {
                         executor.execute(() -> callback.onCaptureStarted(
+                                    CameraCaptureSessionImpl.this, request, timestamp,
+                                    frameNumber));
+                    } finally {
+                        Binder.restoreCallingIdentity(ident);
+                    }
+                }
+            }
+
+            @Override
+            public void onReadoutStarted(CameraDevice camera,
+                    CaptureRequest request, long timestamp, long frameNumber) {
+                if ((callback != null) && (executor != null)) {
+                    final long ident = Binder.clearCallingIdentity();
+                    try {
+                        executor.execute(() -> callback.onReadoutStarted(
                                     CameraCaptureSessionImpl.this, request, timestamp,
                                     frameNumber));
                     } finally {

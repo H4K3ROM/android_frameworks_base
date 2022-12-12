@@ -41,7 +41,10 @@ internal class MobileState(
     @JvmField var roaming: Boolean = false,
     @JvmField var dataState: Int = TelephonyManager.DATA_DISCONNECTED,
     // Tracks the on/off state of the defaultDataSubscription
-    @JvmField var defaultDataOff: Boolean = false
+    @JvmField var defaultDataOff: Boolean = false,
+    @JvmField var imsRegistered: Boolean = false,
+    @JvmField var voiceCapable: Boolean = false,
+    @JvmField var videoCapable: Boolean = false
 ) : ConnectivityState() {
 
     @JvmField var telephonyDisplayInfo = TelephonyDisplayInfo(TelephonyManager.NETWORK_TYPE_UNKNOWN,
@@ -86,6 +89,9 @@ internal class MobileState(
         roaming = o.roaming
         dataState = o.dataState
         defaultDataOff = o.defaultDataOff
+        imsRegistered = o.imsRegistered;
+        voiceCapable = o.voiceCapable;
+        videoCapable = o.videoCapable;
 
         telephonyDisplayInfo = o.telephonyDisplayInfo
         serviceState = o.serviceState
@@ -125,6 +131,10 @@ internal class MobileState(
         return serviceState != null && serviceState!!.roaming
     }
 
+    fun getDataNetworkType(): Int {
+        return serviceState?.getDataNetworkType() ?: 0
+    }
+
     fun setFromMobileStatus(mobileStatus: MobileStatus) {
         activityIn = mobileStatus.activityIn
         activityOut = mobileStatus.activityOut
@@ -151,6 +161,9 @@ internal class MobileState(
         builder.append("userSetup=$userSetup,")
         builder.append("dataState=$dataState,")
         builder.append("defaultDataOff=$defaultDataOff,")
+        builder.append("imsRegistered=$imsRegistered,")
+        builder.append("voiceCapable=$voiceCapable,")
+        builder.append("videoCapable=$videoCapable,")
 
         // Computed properties
         builder.append("showQuickSettingsRatIcon=${showQuickSettingsRatIcon()},")
@@ -160,6 +173,52 @@ internal class MobileState(
         builder.append("serviceState=${serviceState?.minLog() ?: "(null)"},")
         builder.append("signalStrength=${signalStrength?.minLog() ?: "(null)"},")
         builder.append("displayInfo=$telephonyDisplayInfo")
+    }
+
+    override fun tableColumns(): List<String> {
+        val columns = listOf("dataSim",
+            "networkName",
+            "networkNameData",
+            "dataConnected",
+            "roaming",
+            "isDefault",
+            "isEmergency",
+            "airplaneMode",
+            "carrierNetworkChangeMode",
+            "userSetup",
+            "dataState",
+            "defaultDataOff",
+            "showQuickSettingsRatIcon",
+            "voiceServiceState",
+            "isInService",
+            "serviceState",
+            "signalStrength",
+            "displayInfo")
+
+        return super.tableColumns() + columns
+    }
+
+    override fun tableData(): List<String> {
+        val columns = listOf(dataSim,
+                networkName,
+                networkNameData,
+                dataConnected,
+                roaming,
+                isDefault,
+                isEmergency,
+                airplaneMode,
+                carrierNetworkChangeMode,
+                userSetup,
+                dataState,
+                defaultDataOff,
+                showQuickSettingsRatIcon(),
+                getVoiceServiceState(),
+                isInService(),
+                serviceState?.minLog() ?: "(null)",
+                signalStrength?.minLog() ?: "(null)",
+                telephonyDisplayInfo).map { it.toString() }
+
+        return super.tableData() + columns
     }
 
     override fun equals(other: Any?): Boolean {
@@ -181,6 +240,9 @@ internal class MobileState(
         if (roaming != other.roaming) return false
         if (dataState != other.dataState) return false
         if (defaultDataOff != other.defaultDataOff) return false
+        if (imsRegistered != other.imsRegistered) return false
+        if (voiceCapable != other.voiceCapable) return false
+        if (videoCapable != other.videoCapable) return false
         if (telephonyDisplayInfo != other.telephonyDisplayInfo) return false
         if (serviceState != other.serviceState) return false
         if (signalStrength != other.signalStrength) return false

@@ -43,6 +43,7 @@ interface ISystemUiProxy {
 
     /**
      * Get the secondary split screen app's rectangle when not minimized.
+     * @deprecated
      */
     Rect getNonMinimizedSplitScreenSecondaryBounds() = 7;
 
@@ -104,6 +105,7 @@ interface ISystemUiProxy {
 
     /**
      * Sets the split-screen divider minimized state
+     * @deprecated
      */
     void setSplitScreenMinimized(boolean minimized) = 22;
 
@@ -140,9 +142,6 @@ interface ISystemUiProxy {
     /** Notifies that a swipe-up gesture has started */
     oneway void notifySwipeUpGestureStarted() = 46;
 
-    /** Notifies when taskbar is enabled or disabled */
-    oneway void setTaskbarEnabled(boolean enabled) = 500;
-
     /** Notifies when taskbar status updated */
     oneway void notifyTaskbarStatus(boolean visible, boolean stashed) = 47;
 
@@ -158,5 +157,10 @@ interface ISystemUiProxy {
      */
     void onImeSwitcherPressed() = 49;
 
-    // Next id = 50
+    /**
+     * Notifies to toggle notification panel.
+     */
+    void toggleNotificationPanel() = 50;
+
+    // Next id = 51
 }

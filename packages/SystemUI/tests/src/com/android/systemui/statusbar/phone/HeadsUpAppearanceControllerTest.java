@@ -40,13 +40,15 @@ import com.android.systemui.statusbar.notification.NotificationWakeUpCoordinator
 import com.android.systemui.statusbar.notification.row.ExpandableNotificationRow;
 import com.android.systemui.statusbar.notification.row.NotificationTestHelper;
 import com.android.systemui.statusbar.notification.stack.NotificationStackScrollLayoutController;
-import com.android.systemui.statusbar.phone.ClockController;
+import com.android.systemui.statusbar.policy.Clock;
 import com.android.systemui.statusbar.policy.KeyguardStateController;
 
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
+import java.util.Optional;
 
 @SmallTest
 @RunWith(AndroidTestingRunner.class)
@@ -77,7 +79,6 @@ public class HeadsUpAppearanceControllerTest extends SysuiTestCase {
                 mDependency,
                 TestableLooper.get(this));
         mFirst = testHelper.createRow();
-        mDependency.injectTestDependency(DarkIconDispatcher.class, mDarkIconDispatcher);
         mHeadsUpStatusBarView = new HeadsUpStatusBarView(mContext, mock(View.class),
                 mock(TextView.class));
         mHeadsUpManager = mock(HeadsUpManagerPhone.class);
@@ -93,15 +94,14 @@ public class HeadsUpAppearanceControllerTest extends SysuiTestCase {
                 mStatusbarStateController,
                 mBypassController,
                 mWakeUpCoordinator,
+                mDarkIconDispatcher,
                 mKeyguardStateController,
                 mCommandQueue,
                 mStackScrollerController,
                 mPanelView,
                 mHeadsUpStatusBarView,
-                new View(mContext),
-                mock(ClockController.class),
-                mOperatorNameView,
-                new View(mContext),
+                new Clock(mContext, null),
+                Optional.of(mOperatorNameView),
                 new View(mContext));
         mHeadsUpAppearanceController.setAppearFraction(0.0f, 0.0f);
     }
@@ -177,15 +177,14 @@ public class HeadsUpAppearanceControllerTest extends SysuiTestCase {
                 mStatusbarStateController,
                 mBypassController,
                 mWakeUpCoordinator,
+                mDarkIconDispatcher,
                 mKeyguardStateController,
                 mCommandQueue,
                 mStackScrollerController,
                 mPanelView,
                 mHeadsUpStatusBarView,
-                new View(mContext),
-                mock(ClockController.class),
-                new View(mContext),
-                new View(mContext),
+                new Clock(mContext, null),
+                Optional.empty(),
                 new View(mContext));
 
         Assert.assertEquals(expandedHeight, newController.mExpandedHeight, 0.0f);

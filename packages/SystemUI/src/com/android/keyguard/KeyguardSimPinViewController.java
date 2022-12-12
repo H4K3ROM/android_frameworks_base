@@ -86,6 +86,7 @@ public class KeyguardSimPinViewController
         mKeyguardUpdateMonitor = keyguardUpdateMonitor;
         mTelephonyManager = telephonyManager;
         mSimImageView = mView.findViewById(R.id.keyguard_sim);
+        mPasswordEntry.setQuickUnlockListener(null);
     }
 
     @Override
@@ -103,7 +104,7 @@ public class KeyguardSimPinViewController
             showDefaultMessage();
         }
 
-        mView.setEsimLocked(KeyguardEsimArea.isEsimLocked(mView.getContext(), mSubId));
+        mView.setEsimLocked(KeyguardEsimArea.isEsimLocked(mView.getContext(), mSubId), mSubId);
     }
 
     @Override
@@ -128,6 +129,12 @@ public class KeyguardSimPinViewController
             mSimUnlockProgressDialog.dismiss();
             mSimUnlockProgressDialog = null;
         }
+    }
+
+    @Override
+    public void reloadColors() {
+        super.reloadColors();
+        mView.reloadColors();
     }
 
     @Override

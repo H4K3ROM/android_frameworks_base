@@ -60,6 +60,7 @@ import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.os.IDropBoxManagerService;
 import com.android.internal.util.DumpUtils;
+import com.android.internal.util.FrameworkStatsLog;
 import com.android.internal.util.ObjectUtils;
 import com.android.server.DropBoxManagerInternal.EntrySource;
 
@@ -85,6 +86,7 @@ import java.util.zip.GZIPOutputStream;
  */
 public final class DropBoxManagerService extends SystemService {
     private static final String TAG = "DropBoxManagerService";
+    private static final boolean DBG = false;
     private static final int DEFAULT_AGE_SECONDS = 3 * 86400;
     private static final int DEFAULT_MAX_FILES = 1000;
     private static final int DEFAULT_MAX_FILES_LOWRAM = 300;
@@ -463,7 +465,7 @@ public final class DropBoxManagerService extends SystemService {
     public void addEntry(String tag, EntrySource entry, int flags) {
         File temp = null;
         try {
-            Slog.i(TAG, "add tag=" + tag + " isTagEnabled=" + isTagEnabled(tag)
+            if (DBG) Slog.i(TAG, "add tag=" + tag + " isTagEnabled=" + isTagEnabled(tag)
                     + " flags=0x" + Integer.toHexString(flags));
             if ((flags & DropBoxManager.IS_EMPTY) != 0) throw new IllegalArgumentException();
 
@@ -501,10 +503,18 @@ public final class DropBoxManagerService extends SystemService {
             }
         } catch (IOException e) {
             Slog.e(TAG, "Can't write: " + tag, e);
+            logDropboxDropped(
+                    FrameworkStatsLog.DROPBOX_ENTRY_DROPPED__DROP_REASON__WRITE_FAILURE,
+                    tag,
+                    0);
         } finally {
             IoUtils.closeQuietly(entry);
             if (temp != null) temp.delete();
         }
+    }
+
+    private void logDropboxDropped(int reason, String tag, long entryAge) {
+        FrameworkStatsLog.write(FrameworkStatsLog.DROPBOX_ENTRY_DROPPED, reason, tag, entryAge);
     }
 
     public boolean isTagEnabled(String tag) {
@@ -1028,7 +1038,7 @@ public final class DropBoxManagerService extends SystemService {
             // Scan pre-existing files.
             for (File file : files) {
                 if (file.getName().endsWith(".tmp")) {
-                    Slog.i(TAG, "Cleaning temp file: " + file);
+                    if (DBG) Slog.i(TAG, "Cleaning temp file: " + file);
                     file.delete();
                     continue;
                 }
@@ -1119,12 +1129,18 @@ public final class DropBoxManagerService extends SystemService {
                 Settings.Global.DROPBOX_MAX_FILES,
                 (ActivityManager.isLowRamDeviceStatic()
                         ?  DEFAULT_MAX_FILES_LOWRAM : DEFAULT_MAX_FILES));
-        long cutoffMillis = System.currentTimeMillis() - ageSeconds * 1000;
+        long curTimeMillis = System.currentTimeMillis();
+        long cutoffMillis = curTimeMillis - ageSeconds * 1000;
         while (!mAllFiles.contents.isEmpty()) {
             EntryFile entry = mAllFiles.contents.first();
             if (entry.timestampMillis > cutoffMillis && mAllFiles.contents.size() < mMaxFiles) {
                 break;
             }
+
+            logDropboxDropped(
+                    FrameworkStatsLog.DROPBOX_ENTRY_DROPPED__DROP_REASON__AGED,
+                    entry.tag,
+                    curTimeMillis - entry.timestampMillis);
 
             FileList tag = mFilesByTag.get(entry.tag);
             if (tag != null && tag.contents.remove(entry)) tag.blocks -= entry.blocks;
@@ -1194,6 +1210,11 @@ public final class DropBoxManagerService extends SystemService {
                 if (mAllFiles.blocks < mCachedQuotaBlocks) break;
                 while (tag.blocks > tagQuota && !tag.contents.isEmpty()) {
                     EntryFile entry = tag.contents.first();
+                    logDropboxDropped(
+                            FrameworkStatsLog.DROPBOX_ENTRY_DROPPED__DROP_REASON__CLEARING_DATA,
+                            entry.tag,
+                            curTimeMillis - entry.timestampMillis);
+
                     if (tag.contents.remove(entry)) tag.blocks -= entry.blocks;
                     if (mAllFiles.contents.remove(entry)) mAllFiles.blocks -= entry.blocks;
 

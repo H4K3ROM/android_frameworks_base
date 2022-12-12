@@ -93,6 +93,7 @@ public class KeyguardSimPukViewController
         mKeyguardUpdateMonitor = keyguardUpdateMonitor;
         mTelephonyManager = telephonyManager;
         mSimImageView = mView.findViewById(R.id.keyguard_sim);
+        mPasswordEntry.setQuickUnlockListener(null);
     }
 
     @Override
@@ -111,6 +112,12 @@ public class KeyguardSimPukViewController
     void resetState() {
         super.resetState();
         mStateMachine.reset();
+    }
+
+    @Override
+    public void reloadColors() {
+        super.reloadColors();
+        mView.reloadColors();
     }
 
     @Override
@@ -170,6 +177,7 @@ public class KeyguardSimPukViewController
             boolean isEsimLocked = KeyguardEsimArea.isEsimLocked(mView.getContext(), mSubId);
 
             KeyguardEsimArea esimButton = mView.findViewById(R.id.keyguard_esim_area);
+            esimButton.setSubscriptionId(mSubId);
             esimButton.setVisibility(isEsimLocked ? View.VISIBLE : View.GONE);
             mPasswordEntry.requestFocus();
         }
@@ -251,9 +259,6 @@ public class KeyguardSimPukViewController
     public boolean confirmPin() {
         return mPinText.equals(mPasswordEntry.getText());
     }
-
-
-
 
     private void updateSim() {
         getSimUnlockProgressDialog().show();

@@ -19,7 +19,6 @@ package com.android.systemui.globalactions;
 import static com.google.common.truth.Truth.assertThat;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
@@ -58,14 +57,14 @@ import com.android.systemui.animation.DialogLaunchAnimator;
 import com.android.systemui.broadcast.BroadcastDispatcher;
 import com.android.systemui.colorextraction.SysuiColorExtractor;
 import com.android.systemui.controls.dagger.ControlsComponent;
-import com.android.systemui.model.SysUiState;
 import com.android.systemui.plugins.GlobalActions;
 import com.android.systemui.settings.UserContextProvider;
 import com.android.systemui.statusbar.NotificationShadeWindowController;
-import com.android.systemui.statusbar.phone.StatusBar;
-import com.android.systemui.statusbar.phone.SystemUIDialogManager;
+import com.android.systemui.statusbar.VibratorHelper;
+import com.android.systemui.statusbar.phone.CentralSurfaces;
 import com.android.systemui.statusbar.policy.ConfigurationController;
 import com.android.systemui.statusbar.policy.KeyguardStateController;
+import com.android.systemui.telephony.TelephonyListenerManager;
 import com.android.systemui.util.RingerModeLiveData;
 import com.android.systemui.util.RingerModeTracker;
 import com.android.systemui.util.settings.GlobalSettings;
@@ -93,6 +92,7 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
     @Mock private DevicePolicyManager mDevicePolicyManager;
     @Mock private LockPatternUtils mLockPatternUtils;
     @Mock private BroadcastDispatcher mBroadcastDispatcher;
+    @Mock private TelephonyListenerManager mTelephonyListenerManager;
     @Mock private GlobalSettings mGlobalSettings;
     @Mock private SecureSettings mSecureSettings;
     @Mock private Resources mResources;
@@ -110,14 +110,13 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
     @Mock private UiEventLogger mUiEventLogger;
     @Mock private RingerModeTracker mRingerModeTracker;
     @Mock private RingerModeLiveData mRingerModeLiveData;
-    @Mock private SysUiState mSysUiState;
     @Mock private PackageManager mPackageManager;
     @Mock private Handler mHandler;
     @Mock private UserContextProvider mUserContextProvider;
-    @Mock private StatusBar mStatusBar;
+    @Mock private VibratorHelper mVibratorHelper;
+    @Mock private CentralSurfaces mCentralSurfaces;
     @Mock private KeyguardUpdateMonitor mKeyguardUpdateMonitor;
     @Mock private DialogLaunchAnimator mDialogLaunchAnimator;
-    @Mock private SystemUIDialogManager mDialogManager;
     @Mock private ControlsComponent mControlsComponent;
 
     private TestableLooper mTestableLooper;
@@ -140,9 +139,10 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
                 mDevicePolicyManager,
                 mLockPatternUtils,
                 mBroadcastDispatcher,
+                mTelephonyListenerManager,
                 mGlobalSettings,
                 mSecureSettings,
-                null,
+                mVibratorHelper,
                 mResources,
                 mConfigurationController,
                 mKeyguardStateController,
@@ -158,20 +158,17 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
                 mBackgroundExecutor,
                 mUiEventLogger,
                 mRingerModeTracker,
-                mSysUiState,
                 mHandler,
                 mPackageManager,
-                Optional.of(mStatusBar),
+                Optional.of(mCentralSurfaces),
                 mKeyguardUpdateMonitor,
                 mDialogLaunchAnimator,
-                mDialogManager,
                 mControlsComponent);
         mGlobalActionsDialogLite.setZeroDialogPressDelayForTesting();
 
         ColorExtractor.GradientColors backdropColors = new ColorExtractor.GradientColors();
         backdropColors.setMainColor(Color.BLACK);
         when(mColorExtractor.getNeutralColors()).thenReturn(backdropColors);
-        when(mSysUiState.setFlag(anyInt(), anyBoolean())).thenReturn(mSysUiState);
     }
 
     @Test
@@ -233,7 +230,7 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
         doReturn(4).when(mGlobalActionsDialogLite).getMaxShownPowerItems();
         doReturn(true).when(mGlobalActionsDialogLite).shouldDisplayLockdown(any());
         doReturn(true).when(mGlobalActionsDialogLite).shouldShowAction(any());
-        doReturn(true).when(mStatusBar).isKeyguardShowing();
+        doReturn(true).when(mCentralSurfaces).isKeyguardShowing();
         String[] actions = {
                 GlobalActionsDialogLite.GLOBAL_ACTION_KEY_EMERGENCY,
                 GlobalActionsDialogLite.GLOBAL_ACTION_KEY_LOCKDOWN,
@@ -248,7 +245,7 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
         MotionEvent end = MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, 0, 500, 0);
         gestureListener.onFling(start, end, 0, 1000);
         verifyLogPosted(GlobalActionsDialogLite.GlobalActionsEvent.GA_CLOSE_TAP_OUTSIDE);
-        verify(mStatusBar).animateExpandSettingsPanel(null);
+        verify(mCentralSurfaces).animateExpandSettingsPanel(null);
     }
 
     @Test
@@ -257,7 +254,7 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
         doReturn(4).when(mGlobalActionsDialogLite).getMaxShownPowerItems();
         doReturn(true).when(mGlobalActionsDialogLite).shouldDisplayLockdown(any());
         doReturn(true).when(mGlobalActionsDialogLite).shouldShowAction(any());
-        doReturn(false).when(mStatusBar).isKeyguardShowing();
+        doReturn(false).when(mCentralSurfaces).isKeyguardShowing();
         String[] actions = {
                 GlobalActionsDialogLite.GLOBAL_ACTION_KEY_EMERGENCY,
                 GlobalActionsDialogLite.GLOBAL_ACTION_KEY_LOCKDOWN,
@@ -272,7 +269,7 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
         MotionEvent end = MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, 0, 500, 0);
         gestureListener.onFling(start, end, 0, 1000);
         verifyLogPosted(GlobalActionsDialogLite.GlobalActionsEvent.GA_CLOSE_TAP_OUTSIDE);
-        verify(mStatusBar).animateExpandNotificationsPanel();
+        verify(mCentralSurfaces).animateExpandNotificationsPanel();
     }
 
     @Test
@@ -347,6 +344,7 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
     public void testCreateActionItems_lockdownEnabled_doesShowLockdown() {
         mGlobalActionsDialogLite = spy(mGlobalActionsDialogLite);
         doReturn(4).when(mGlobalActionsDialogLite).getMaxShownPowerItems();
+        doReturn(true).when(mGlobalActionsDialogLite).shouldDisplayEmergency();
         doReturn(true).when(mGlobalActionsDialogLite).shouldDisplayLockdown(any());
         doReturn(true).when(mGlobalActionsDialogLite).shouldShowAction(any());
         String[] actions = {
@@ -371,8 +369,10 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
     public void testCreateActionItems_lockdownDisabled_doesNotShowLockdown() {
         mGlobalActionsDialogLite = spy(mGlobalActionsDialogLite);
         doReturn(4).when(mGlobalActionsDialogLite).getMaxShownPowerItems();
+        doReturn(true).when(mGlobalActionsDialogLite).shouldDisplayEmergency();
         // make sure lockdown action will NOT be shown
         doReturn(false).when(mGlobalActionsDialogLite).shouldDisplayLockdown(any());
+        doReturn(true).when(mGlobalActionsDialogLite).shouldShowAction(any());
         String[] actions = {
                 GlobalActionsDialogLite.GLOBAL_ACTION_KEY_EMERGENCY,
                 // lockdown action not allowed
@@ -385,6 +385,32 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
 
         assertItemsOfType(mGlobalActionsDialogLite.mItems,
                 GlobalActionsDialogLite.EmergencyAction.class,
+                GlobalActionsDialogLite.ShutDownAction.class,
+                GlobalActionsDialogLite.RestartAction.class);
+        assertThat(mGlobalActionsDialogLite.mOverflowItems).isEmpty();
+        assertThat(mGlobalActionsDialogLite.mPowerItems).isEmpty();
+    }
+
+    @Test
+    public void testCreateActionItems_emergencyDisabled_doesNotShowEmergency() {
+        mGlobalActionsDialogLite = spy(mGlobalActionsDialogLite);
+        doReturn(4).when(mGlobalActionsDialogLite).getMaxShownPowerItems();
+        // make sure emergency action will NOT be shown
+        doReturn(false).when(mGlobalActionsDialogLite).shouldDisplayEmergency();
+        doReturn(true).when(mGlobalActionsDialogLite).shouldDisplayLockdown(any());
+        doReturn(true).when(mGlobalActionsDialogLite).shouldShowAction(any());
+        String[] actions = {
+                // emergency action not allowed
+                GlobalActionsDialogLite.GLOBAL_ACTION_KEY_EMERGENCY,
+                GlobalActionsDialogLite.GLOBAL_ACTION_KEY_LOCKDOWN,
+                GlobalActionsDialogLite.GLOBAL_ACTION_KEY_POWER,
+                GlobalActionsDialogLite.GLOBAL_ACTION_KEY_RESTART,
+        };
+        doReturn(actions).when(mGlobalActionsDialogLite).getDefaultActions();
+        mGlobalActionsDialogLite.createActionItems();
+
+        assertItemsOfType(mGlobalActionsDialogLite.mItems,
+                GlobalActionsDialogLite.LockDownAction.class,
                 GlobalActionsDialogLite.ShutDownAction.class,
                 GlobalActionsDialogLite.RestartAction.class);
         assertThat(mGlobalActionsDialogLite.mOverflowItems).isEmpty();
@@ -438,7 +464,7 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
         doReturn(4).when(mGlobalActionsDialogLite).getMaxShownPowerItems();
         doReturn(true).when(mGlobalActionsDialogLite).shouldDisplayLockdown(any());
         doReturn(true).when(mGlobalActionsDialogLite).shouldShowAction(any());
-        doReturn(false).when(mStatusBar).isKeyguardShowing();
+        doReturn(false).when(mCentralSurfaces).isKeyguardShowing();
         String[] actions = {
                 GlobalActionsDialogLite.GLOBAL_ACTION_KEY_EMERGENCY,
                 GlobalActionsDialogLite.GLOBAL_ACTION_KEY_LOCKDOWN,

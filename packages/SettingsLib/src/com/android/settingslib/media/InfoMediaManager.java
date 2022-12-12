@@ -15,6 +15,7 @@
  */
 package com.android.settingslib.media;
 
+import static android.media.MediaRoute2Info.TYPE_BLE_HEADSET;
 import static android.media.MediaRoute2Info.TYPE_BLUETOOTH_A2DP;
 import static android.media.MediaRoute2Info.TYPE_BUILTIN_SPEAKER;
 import static android.media.MediaRoute2Info.TYPE_DOCK;
@@ -30,6 +31,8 @@ import static android.media.MediaRoute2Info.TYPE_USB_HEADSET;
 import static android.media.MediaRoute2Info.TYPE_WIRED_HEADPHONES;
 import static android.media.MediaRoute2Info.TYPE_WIRED_HEADSET;
 import static android.media.MediaRoute2ProviderService.REASON_UNKNOWN_ERROR;
+
+import static com.android.settingslib.media.LocalMediaManager.MediaDeviceState.STATE_SELECTED;
 
 import android.annotation.TargetApi;
 import android.app.Notification;
@@ -116,11 +119,9 @@ public class InfoMediaManager extends MediaManager {
      */
     boolean connectDeviceWithoutPackageName(MediaDevice device) {
         boolean isConnected = false;
-        final List<RoutingSessionInfo> infos = mRouterManager.getActiveSessions();
-        if (infos.size() > 0) {
-            final RoutingSessionInfo info = infos.get(0);
+        final RoutingSessionInfo info = mRouterManager.getSystemRoutingSession(null);
+        if (info != null) {
             mRouterManager.transfer(info, device.mRouteInfo);
-
             isConnected = true;
         }
         return isConnected;
@@ -445,7 +446,10 @@ public class InfoMediaManager extends MediaManager {
     }
 
     List<RoutingSessionInfo> getActiveMediaSession() {
-        return mRouterManager.getActiveSessions();
+        List<RoutingSessionInfo> infos = new ArrayList<>();
+        infos.add(mRouterManager.getSystemRoutingSession(null));
+        infos.addAll(mRouterManager.getRemoteSessions());
+        return infos;
     }
 
     private void buildAvailableRoutes() {
@@ -463,6 +467,7 @@ public class InfoMediaManager extends MediaManager {
         RoutingSessionInfo routingSessionInfo = getRoutingSessionInfo(packageName);
         if (routingSessionInfo != null) {
             infos.addAll(mRouterManager.getSelectedRoutes(routingSessionInfo));
+            infos.addAll(mRouterManager.getSelectableRoutes(routingSessionInfo));
         }
         final List<MediaRoute2Info> transferableRoutes =
                 mRouterManager.getTransferableRoutes(packageName);
@@ -494,9 +499,11 @@ public class InfoMediaManager extends MediaManager {
                 mediaDevice = new InfoMediaDevice(mContext, mRouterManager, route,
                         mPackageName);
                 if (!TextUtils.isEmpty(mPackageName)
-                        && getRoutingSessionInfo().getSelectedRoutes().contains(route.getId())
-                        && mCurrentConnectedDevice == null) {
-                    mCurrentConnectedDevice = mediaDevice;
+                        && getRoutingSessionInfo().getSelectedRoutes().contains(route.getId())) {
+                    mediaDevice.setState(STATE_SELECTED);
+                    if (mCurrentConnectedDevice == null) {
+                        mCurrentConnectedDevice = mediaDevice;
+                    }
                 }
                 break;
             case TYPE_BUILTIN_SPEAKER:
@@ -512,6 +519,7 @@ public class InfoMediaManager extends MediaManager {
                 break;
             case TYPE_HEARING_AID:
             case TYPE_BLUETOOTH_A2DP:
+            case TYPE_BLE_HEADSET:
                 final BluetoothDevice device =
                         BluetoothAdapter.getDefaultAdapter().getRemoteDevice(route.getAddress());
                 final CachedBluetoothDevice cachedDevice =

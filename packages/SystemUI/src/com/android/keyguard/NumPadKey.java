@@ -19,9 +19,11 @@ import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.TypedArray;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.util.AttributeSet;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
@@ -36,8 +38,6 @@ import androidx.annotation.Nullable;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.settingslib.Utils;
 import com.android.systemui.R;
-
-import lineageos.providers.LineageSettings;
 
 public class NumPadKey extends ViewGroup {
     // list of "ABC", etc per digit, starting with '0'
@@ -120,9 +120,9 @@ public class NumPadKey extends ViewGroup {
         setContentDescription(mDigitText.getText().toString());
 
         Drawable background = getBackground();
-        if (background instanceof RippleDrawable) {
-            mAnimator = new NumPadAnimator(context, (RippleDrawable) background,
-                    R.style.NumPadKey);
+        if (background instanceof GradientDrawable) {
+            mAnimator = new NumPadAnimator(context, background.mutate(),
+                    R.style.NumPadKey, mDigitText, null);
         } else {
             mAnimator = null;
         }
@@ -134,8 +134,9 @@ public class NumPadKey extends ViewGroup {
     }
 
     private void updateText() {
-       boolean scramblePin = (LineageSettings.System.getInt(getContext().getContentResolver(),
-                LineageSettings.System.LOCKSCREEN_PIN_SCRAMBLE_LAYOUT, 0) == 1);
+        boolean scramblePin = Settings.System.getIntForUser(getContext().getContentResolver(),
+                Settings.System.LOCKSCREEN_PIN_SCRAMBLE_LAYOUT, 0,
+                UserHandle.USER_CURRENT) == 1;
         if (mDigit >= 0) {
             mDigitText.setText(Integer.toString(mDigit));
             if (sKlondike == null) {
@@ -144,7 +145,7 @@ public class NumPadKey extends ViewGroup {
             if (sKlondike != null && sKlondike.length > mDigit) {
                 String klondike = sKlondike[mDigit];
                 final int len = klondike.length();
-                if (len > 0 || scramblePin) {
+                if (len > 0  || scramblePin) {
                     mKlondikeText.setText(klondike);
                 } else if (mKlondikeText.getVisibility() != View.GONE) {
                     mKlondikeText.setVisibility(View.INVISIBLE);
@@ -174,11 +175,16 @@ public class NumPadKey extends ViewGroup {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-            doHapticKeyClick();
-            if (mAnimator != null) mAnimator.start();
+        switch(event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                doHapticKeyClick();
+                if (mAnimator != null) mAnimator.expand();
+                break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                if (mAnimator != null) mAnimator.contract();
+                break;
         }
-
         return super.onTouchEvent(event);
     }
 
@@ -226,10 +232,7 @@ public class NumPadKey extends ViewGroup {
 
     // Cause a VIRTUAL_KEY vibration
     public void doHapticKeyClick() {
-        if (mLockPatternUtils.isTactileFeedbackEnabled()) {
-            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY,
-                    HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
-                    | HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-        }
+        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY,
+                HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
     }
 }

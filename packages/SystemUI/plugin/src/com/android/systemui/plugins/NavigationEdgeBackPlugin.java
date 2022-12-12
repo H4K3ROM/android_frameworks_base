@@ -36,6 +36,9 @@ public interface NavigationEdgeBackPlugin extends Plugin {
     /** Specifies if the UI should be rendered on the left side of the screen. */
     void setIsLeftPanel(boolean isLeftPanel);
 
+    /** Specifies if the arrow animation is shown for back gesture. */
+    void setBackArrowVisibility(boolean backArrowVisibility);
+
     /** Sets the insets for the gesture handling area. */
     void setInsets(int leftInset, int rightInset);
 
@@ -44,9 +47,6 @@ public interface NavigationEdgeBackPlugin extends Plugin {
 
     /** Sets the callback that should be invoked when a Back gesture is detected. */
     void setBackCallback(BackCallback callback);
-
-    /** Specifies if the long swipe should be enabled or not. */
-    void setLongSwipeEnabled(boolean enabled);
 
     /** Sets the base LayoutParams for the UI. */
     void setLayoutParams(WindowManager.LayoutParams layoutParams);
@@ -60,7 +60,7 @@ public interface NavigationEdgeBackPlugin extends Plugin {
     /** Callback to let the system react to the detected back gestures. */
     interface BackCallback {
         /** Indicates that a Back gesture was recognized and the system should go back. */
-        void triggerBack(boolean isLongPress);
+        void triggerBack();
 
         /** Indicates that the gesture was cancelled and the system should not go back. */
         void cancelBack();

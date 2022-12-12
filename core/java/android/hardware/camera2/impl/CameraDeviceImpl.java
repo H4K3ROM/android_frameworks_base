@@ -16,13 +16,15 @@
 
 package android.hardware.camera2.impl;
 
+import static android.hardware.camera2.CameraAccessException.CAMERA_IN_USE;
+
 import static com.android.internal.util.function.pooled.PooledLambda.obtainRunnable;
 
 import android.annotation.NonNull;
 import android.content.Context;
+import android.app.ActivityThread;
 import android.graphics.ImageFormat;
 import android.hardware.ICameraService;
-import android.app.ActivityThread;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -87,7 +89,7 @@ public class CameraDeviceImpl extends CameraDevice
     private final boolean DEBUG = false;
 
     private static final int REQUEST_ID_NONE = -1;
-
+    private int customOpMode = 0;
     // TODO: guard every function with if (!mRemoteDevice) check (if it was closed)
     private ICameraDeviceUserWrapper mRemoteDevice;
 
@@ -132,6 +134,8 @@ public class CameraDeviceImpl extends CameraDevice
     private final Map<String, CameraCharacteristics> mPhysicalIdsToChars;
     private final int mTotalPartialCount;
     private final Context mContext;
+
+    private final boolean mForceMultiResolution;
 
     private static final long NANO_PER_SECOND = 1000000000; //ns
 
@@ -306,6 +310,9 @@ public class CameraDeviceImpl extends CameraDevice
             mTotalPartialCount = partialCount;
         }
         mIsPrivilegedApp = checkPrivilegedAppList();
+
+        mForceMultiResolution = mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_forceMultiResolution);
     }
 
     public CameraDeviceCallbacks getCallbacks() {
@@ -392,6 +399,10 @@ public class CameraDeviceImpl extends CameraDevice
                 }
             });
         }
+    }
+
+    public void setVendorStreamConfigMode(int fpsrange) {
+        customOpMode = fpsrange;
     }
 
     @Override
@@ -512,6 +523,7 @@ public class CameraDeviceImpl extends CameraDevice
                         mConfiguredOutputs.put(streamId, outConfig);
                     }
                 }
+                operatingMode = (operatingMode | (customOpMode << 16));
 
                 int offlineStreamIds[];
                 if (sessionParams != null) {
@@ -1534,7 +1546,7 @@ public class CameraDeviceImpl extends CameraDevice
             return;
         }
         int inputFormat = inputConfig.getFormat();
-        if (inputConfig.isMultiResolution()) {
+        if (inputConfig.isMultiResolution() || mForceMultiResolution) {
             MultiResolutionStreamConfigurationMap configMap = mCharacteristics.get(
                     CameraCharacteristics.SCALER_MULTI_RESOLUTION_STREAM_CONFIGURATION_MAP);
 
@@ -1574,12 +1586,15 @@ public class CameraDeviceImpl extends CameraDevice
                 Log.w(TAG, "ignore input format/size check for white listed app");
                 return;
             }
-
-            if (!checkInputConfigurationWithStreamConfigurations(inputConfig, /*maxRes*/false) &&
-                    !checkInputConfigurationWithStreamConfigurations(inputConfig, /*maxRes*/true)) {
-                throw new IllegalArgumentException("Input config with format " +
-                        inputFormat + " and size " + inputConfig.getWidth() + "x" +
-                        inputConfig.getHeight() + " not supported by camera id " + mCameraId);
+            boolean skipInputConfigCheck =
+                SystemProperties.getBoolean("persist.camera.skip_input_config_check", false);
+            if (!skipInputConfigCheck) {
+              if (!checkInputConfigurationWithStreamConfigurations(inputConfig, /*maxRes*/false) &&
+                      !checkInputConfigurationWithStreamConfigurations(inputConfig, /*maxRes*/true)) {
+                  throw new IllegalArgumentException("Input config with format " +
+                          inputFormat + " and size " + inputConfig.getWidth() + "x" +
+                          inputConfig.getHeight() + " not supported by camera id " + mCameraId);
+              }
             }
         }
     }
@@ -2060,12 +2075,16 @@ public class CameraDeviceImpl extends CameraDevice
                     resultExtras.getLastCompletedReprocessFrameNumber();
             final long lastCompletedZslFrameNumber =
                     resultExtras.getLastCompletedZslFrameNumber();
+            final boolean hasReadoutTimestamp = resultExtras.hasReadoutTimestamp();
+            final long readoutTimestamp = resultExtras.getReadoutTimestamp();
 
             if (DEBUG) {
                 Log.d(TAG, "Capture started for id " + requestId + " frame number " + frameNumber
                         + ": completedRegularFrameNumber " + lastCompletedRegularFrameNumber
                         + ", completedReprocessFrameNUmber " + lastCompletedReprocessFrameNumber
-                        + ", completedZslFrameNumber " + lastCompletedZslFrameNumber);
+                        + ", completedZslFrameNumber " + lastCompletedZslFrameNumber
+                        + ", hasReadoutTimestamp " + hasReadoutTimestamp
+                        + (hasReadoutTimestamp ? ", readoutTimestamp " + readoutTimestamp : "")) ;
             }
             final CaptureCallbackHolder holder;
 
@@ -2117,14 +2136,26 @@ public class CameraDeviceImpl extends CameraDevice
                                                 CameraDeviceImpl.this,
                                                 holder.getRequest(i),
                                                 timestamp - (subsequenceId - i) *
-                                                NANO_PER_SECOND/fpsRange.getUpper(),
+                                                NANO_PER_SECOND / fpsRange.getUpper(),
                                                 frameNumber - (subsequenceId - i));
+                                            if (hasReadoutTimestamp) {
+                                                holder.getCallback().onReadoutStarted(
+                                                    CameraDeviceImpl.this,
+                                                    holder.getRequest(i),
+                                                    readoutTimestamp - (subsequenceId - i) *
+                                                    NANO_PER_SECOND / fpsRange.getUpper(),
+                                                    frameNumber - (subsequenceId - i));
+                                            }
                                         }
                                     } else {
                                         holder.getCallback().onCaptureStarted(
-                                            CameraDeviceImpl.this,
-                                            holder.getRequest(resultExtras.getSubsequenceId()),
+                                            CameraDeviceImpl.this, request,
                                             timestamp, frameNumber);
+                                        if (hasReadoutTimestamp) {
+                                            holder.getCallback().onReadoutStarted(
+                                                CameraDeviceImpl.this, request,
+                                                readoutTimestamp, frameNumber);
+                                        }
                                     }
                                 }
                             }
@@ -2530,10 +2561,10 @@ public class CameraDeviceImpl extends CameraDevice
             if (CameraExtensionCharacteristics.areAdvancedExtensionsSupported()) {
                 mCurrentAdvancedExtensionSession =
                         CameraAdvancedExtensionSessionImpl.createCameraAdvancedExtensionSession(
-                                this, mContext, extensionConfiguration);
+                                this, mContext, extensionConfiguration, mNextSessionId++);
             } else {
                 mCurrentExtensionSession = CameraExtensionSessionImpl.createCameraExtensionSession(
-                        this, mContext, extensionConfiguration);
+                        this, mContext, extensionConfiguration, mNextSessionId++);
             }
         } catch (RemoteException e) {
             throw new CameraAccessException(CameraAccessException.CAMERA_ERROR);

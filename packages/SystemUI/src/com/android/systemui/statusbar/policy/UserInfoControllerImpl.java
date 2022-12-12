@@ -74,7 +74,7 @@ public class UserInfoControllerImpl implements UserInfoController {
         profileFilter.addAction(ContactsContract.Intents.ACTION_PROFILE_CHANGED);
         profileFilter.addAction(Intent.ACTION_USER_INFO_CHANGED);
         mContext.registerReceiverAsUser(mProfileReceiver, UserHandle.ALL, profileFilter,
-                null, null);
+                null, null, Context.RECEIVER_EXPORTED_UNAUDITED);
     }
 
     @Override
@@ -123,7 +123,12 @@ public class UserInfoControllerImpl implements UserInfoController {
             mUserInfoTask.cancel(false);
             mUserInfoTask = null;
         }
-        queryForUserInformation();
+
+        try {
+            queryForUserInformation();
+        } catch (Exception e) {
+            Log.e(TAG, "Couldn't query user info", e);
+        }
     }
 
     private void queryForUserInformation() {

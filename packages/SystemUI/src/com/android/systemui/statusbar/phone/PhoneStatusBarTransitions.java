@@ -31,7 +31,9 @@ public final class PhoneStatusBarTransitions extends BarTransitions {
 
     private final float mIconAlphaWhenOpaque;
 
-    private View mLeftSide, mStatusIcons, mNetworkTraffic, mBattery;
+    private View mLeftSide, mStatusIcons, mBattery, mStatusBarLogo, mStatusBarLogoRight;
+    private View mBatteryBars[] = new View[2];
+
     private Animator mCurrentAnimation;
 
     /**
@@ -43,8 +45,11 @@ public final class PhoneStatusBarTransitions extends BarTransitions {
         mIconAlphaWhenOpaque = res.getFraction(R.dimen.status_bar_icon_drawing_alpha, 1, 1);
         mLeftSide = statusBarView.findViewById(R.id.status_bar_left_side);
         mStatusIcons = statusBarView.findViewById(R.id.statusIcons);
-        mNetworkTraffic = statusBarView.findViewById(R.id.network_traffic);
         mBattery = statusBarView.findViewById(R.id.battery);
+        mBatteryBars[0] = statusBarView.findViewById(R.id.battery_bar);
+        mBatteryBars[1] = statusBarView.findViewById(R.id.battery_bar_1);
+        mStatusBarLogo = statusBarView.findViewById(R.id.statusbar_logo);
+        mStatusBarLogoRight = statusBarView.findViewById(R.id.statusbar_logo_right);
         applyModeBackground(-1, getMode(), false /*animate*/);
         applyMode(getMode(), false /*animate*/);
     }
@@ -85,10 +90,13 @@ public final class PhoneStatusBarTransitions extends BarTransitions {
         if (animate) {
             AnimatorSet anims = new AnimatorSet();
             anims.playTogether(
+                    animateTransitionTo(mStatusBarLogo, newAlphaBC),
+                    animateTransitionTo(mStatusBarLogoRight, newAlphaBC),
                     animateTransitionTo(mLeftSide, newAlpha),
                     animateTransitionTo(mStatusIcons, newAlpha),
-                    animateTransitionTo(mNetworkTraffic, newAlpha),
-                    animateTransitionTo(mBattery, newAlphaBC)
+                    animateTransitionTo(mBattery, newAlphaBC),
+                    animateTransitionTo(mBatteryBars[0], newAlphaBC),
+                    animateTransitionTo(mBatteryBars[1], newAlphaBC)
                     );
             if (isLightsOut(mode)) {
                 anims.setDuration(LIGHTS_OUT_DURATION);
@@ -96,10 +104,13 @@ public final class PhoneStatusBarTransitions extends BarTransitions {
             anims.start();
             mCurrentAnimation = anims;
         } else {
+            mStatusBarLogo.setAlpha(newAlphaBC);
+            mStatusBarLogoRight.setAlpha(newAlphaBC);
             mLeftSide.setAlpha(newAlpha);
             mStatusIcons.setAlpha(newAlpha);
-            mNetworkTraffic.setAlpha(newAlpha);
             mBattery.setAlpha(newAlphaBC);
+            mBatteryBars[0].setAlpha(newAlphaBC);
+            mBatteryBars[1].setAlpha(newAlphaBC);
         }
     }
 }

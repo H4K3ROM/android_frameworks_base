@@ -17,8 +17,6 @@
 
 package com.android.systemui.qs.tiles;
 
-import static com.android.internal.logging.MetricsLogger.VIEW_UNKNOWN;
-
 import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
@@ -30,6 +28,7 @@ import android.view.View;
 import androidx.annotation.Nullable;
 
 import com.android.internal.logging.MetricsLogger;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.R;
 import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.dagger.qualifiers.Main;
@@ -37,10 +36,11 @@ import com.android.systemui.plugins.ActivityStarter;
 import com.android.systemui.plugins.FalsingManager;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.plugins.statusbar.StatusBarStateController;
-import com.android.systemui.qs.GlobalSetting;
 import com.android.systemui.qs.QSHost;
+import com.android.systemui.qs.SettingObserver;
 import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.util.settings.GlobalSettings;
 
 import javax.inject.Inject;
 
@@ -52,7 +52,7 @@ public class HeadsUpTile extends QSTileImpl<BooleanState> {
     private static final Intent NOTIFICATION_SETTINGS =
             new Intent("android.settings.NOTIFICATION_SETTINGS");
 
-    private final GlobalSetting mSetting;
+    private final SettingObserver mSetting;
 
     @Inject
     public HeadsUpTile(
@@ -63,14 +63,16 @@ public class HeadsUpTile extends QSTileImpl<BooleanState> {
             MetricsLogger metricsLogger,
             StatusBarStateController statusBarStateController,
             ActivityStarter activityStarter,
-            QSLogger qsLogger
+            QSLogger qsLogger,
+            GlobalSettings globalSettings
     ) {
         super(host, backgroundLooper, mainHandler, falsingManager, metricsLogger,
                 statusBarStateController, activityStarter, qsLogger);
 
-        mSetting = new GlobalSetting(mContext, mHandler, Global.HEADS_UP_NOTIFICATIONS_ENABLED) {
+        mSetting = new SettingObserver(globalSettings, mHandler,
+                Global.HEADS_UP_NOTIFICATIONS_ENABLED) {
             @Override
-            protected void handleValueChanged(int value) {
+            protected void handleValueChanged(int value, boolean observedChange) {
                 handleRefreshState(value);
             }
         };
@@ -122,17 +124,8 @@ public class HeadsUpTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
-    protected String composeChangeAnnouncement() {
-        if (mState.value) {
-            return mContext.getString(R.string.accessibility_quick_settings_heads_up_changed_on);
-        } else {
-            return mContext.getString(R.string.accessibility_quick_settings_heads_up_changed_off);
-        }
-    }
-
-    @Override
     public int getMetricsCategory() {
-        return VIEW_UNKNOWN;
+        return MetricsEvent.CUSTOM_QUICK_TILES;
     }
 
     @Override

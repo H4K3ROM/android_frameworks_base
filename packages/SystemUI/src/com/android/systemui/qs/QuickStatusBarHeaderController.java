@@ -23,6 +23,7 @@ import com.android.systemui.battery.BatteryMeterViewController;
 import com.android.systemui.demomode.DemoMode;
 import com.android.systemui.demomode.DemoModeController;
 import com.android.systemui.flags.FeatureFlags;
+import com.android.systemui.flags.Flags;
 import com.android.systemui.qs.carrier.QSCarrierGroupController;
 import com.android.systemui.qs.dagger.QSScope;
 import com.android.systemui.statusbar.phone.StatusBarContentInsetsProvider;
@@ -52,8 +53,8 @@ class QuickStatusBarHeaderController extends ViewController<QuickStatusBarHeader
     private final StatusBarIconController.TintedIconManager mIconManager;
     private final DemoMode mDemoModeReceiver;
     private final QSExpansionPathInterpolator mQSExpansionPathInterpolator;
-    private final BatteryMeterViewController mBatteryMeterViewController;
     private final FeatureFlags mFeatureFlags;
+    private final BatteryMeterViewController mBatteryMeterViewController;
     private final StatusBarContentInsetsProvider mInsetsProvider;
 
     private final VariableDateViewController mVariableDateViewControllerDateView;
@@ -70,9 +71,9 @@ class QuickStatusBarHeaderController extends ViewController<QuickStatusBarHeader
             QuickQSPanelController quickQSPanelController,
             QSCarrierGroupController.Builder qsCarrierGroupControllerBuilder,
             QSExpansionPathInterpolator qsExpansionPathInterpolator,
-            BatteryMeterViewController batteryMeterViewController,
             FeatureFlags featureFlags,
             VariableDateViewController.Factory variableDateViewControllerFactory,
+            BatteryMeterViewController batteryMeterViewController,
             StatusBarContentInsetsProvider statusBarContentInsetsProvider) {
         super(view);
         mPrivacyIconsController = headerPrivacyIconsController;
@@ -80,8 +81,8 @@ class QuickStatusBarHeaderController extends ViewController<QuickStatusBarHeader
         mDemoModeController = demoModeController;
         mQuickQSPanelController = quickQSPanelController;
         mQSExpansionPathInterpolator = qsExpansionPathInterpolator;
-        mBatteryMeterViewController = batteryMeterViewController;
         mFeatureFlags = featureFlags;
+        mBatteryMeterViewController = batteryMeterViewController;
         mInsetsProvider = statusBarContentInsetsProvider;
 
         mQSCarrierGroupController = qsCarrierGroupControllerBuilder
@@ -123,7 +124,7 @@ class QuickStatusBarHeaderController extends ViewController<QuickStatusBarHeader
 
         List<String> rssiIgnoredSlots;
 
-        if (mFeatureFlags.isCombinedStatusBarSignalIconsEnabled()) {
+        if (mFeatureFlags.isEnabled(Flags.COMBINED_STATUS_BAR_SIGNAL_ICONS)) {
             rssiIgnoredSlots = List.of(
                     getResources().getString(com.android.internal.R.string.status_bar_no_calling),
                     getResources().getString(com.android.internal.R.string.status_bar_call_strength)
@@ -135,7 +136,7 @@ class QuickStatusBarHeaderController extends ViewController<QuickStatusBarHeader
         }
 
         mView.onAttach(mIconManager, mQSExpansionPathInterpolator, rssiIgnoredSlots,
-                mFeatureFlags.useCombinedQSHeaders(), mInsetsProvider);
+                mInsetsProvider, mFeatureFlags.isEnabled(Flags.COMBINED_QS_HEADERS));
 
         mDemoModeController.addCallback(mDemoModeReceiver);
 
@@ -161,9 +162,6 @@ class QuickStatusBarHeaderController extends ViewController<QuickStatusBarHeader
         mListening = listening;
 
         mQuickQSPanelController.setListening(listening);
-        if (mQuickQSPanelController.isListening()) {
-            mQuickQSPanelController.refreshAllTiles();
-        }
 
         if (mQuickQSPanelController.switchTileLayout(false)) {
             mView.updateResources();

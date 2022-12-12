@@ -162,7 +162,9 @@ class TaskSnapshotPersister {
     void removeObsoleteFiles(ArraySet<Integer> persistentTaskIds, int[] runningUserIds) {
         synchronized (mLock) {
             mPersistedTaskIdsSinceLastRemoveObsolete.clear();
-            sendToQueueLocked(new RemoveObsoleteFilesQueueItem(persistentTaskIds, runningUserIds));
+            // Copy persistentTaskIds to avoid two threads manipulating it at the same time.
+            sendToQueueLocked(new RemoveObsoleteFilesQueueItem(
+                    new ArraySet<>(persistentTaskIds), runningUserIds));
         }
     }
 
@@ -407,6 +409,10 @@ class TaskSnapshotPersister {
         }
 
         boolean writeBuffer() {
+            if (TaskSnapshotController.isInvalidHardwareBuffer(mSnapshot.getHardwareBuffer())) {
+                Slog.e(TAG, "Invalid task snapshot hw buffer, taskId=" + mTaskId);
+                return false;
+            }
             final Bitmap bitmap = Bitmap.wrapHardwareBuffer(
                     mSnapshot.getHardwareBuffer(), mSnapshot.getColorSpace());
             if (bitmap == null) {

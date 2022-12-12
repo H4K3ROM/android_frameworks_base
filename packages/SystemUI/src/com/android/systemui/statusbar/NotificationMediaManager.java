@@ -16,15 +16,14 @@
 package com.android.systemui.statusbar;
 
 import static com.android.systemui.statusbar.StatusBarState.KEYGUARD;
-import static com.android.systemui.statusbar.phone.StatusBar.DEBUG_MEDIA_FAKE_ARTWORK;
-import static com.android.systemui.statusbar.phone.StatusBar.ENABLE_LOCKSCREEN_WALLPAPER;
-import static com.android.systemui.statusbar.phone.StatusBar.SHOW_LOCKSCREEN_MEDIA_ARTWORK;
+import static com.android.systemui.statusbar.phone.CentralSurfaces.DEBUG_MEDIA_FAKE_ARTWORK;
+import static com.android.systemui.statusbar.phone.CentralSurfaces.ENABLE_LOCKSCREEN_WALLPAPER;
+import static com.android.systemui.statusbar.phone.CentralSurfaces.SHOW_LOCKSCREEN_MEDIA_ARTWORK;
 
 import android.annotation.MainThread;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.Notification;
-import android.app.WallpaperManager;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
@@ -37,6 +36,8 @@ import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.AsyncTask;
 import android.os.Trace;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.NotificationStats;
 import android.service.notification.StatusBarNotification;
@@ -46,18 +47,20 @@ import android.view.View;
 import android.widget.ImageView;
 
 import com.android.internal.statusbar.NotificationVisibility;
+import com.android.internal.util.aicp.ImageHelper;
 import com.android.systemui.Dependency;
 import com.android.systemui.Dumpable;
+import com.android.systemui.R;
 import com.android.systemui.animation.Interpolators;
 import com.android.systemui.colorextraction.SysuiColorExtractor;
 import com.android.systemui.dagger.qualifiers.Main;
 import com.android.systemui.dump.DumpManager;
-import com.android.systemui.flags.FeatureFlags;
 import com.android.systemui.media.MediaData;
 import com.android.systemui.media.MediaDataManager;
 import com.android.systemui.media.SmartspaceMediaData;
 import com.android.systemui.plugins.statusbar.StatusBarStateController;
-import com.android.systemui.statusbar.dagger.StatusBarModule;
+import com.android.systemui.statusbar.dagger.CentralSurfacesModule;
+import com.android.systemui.statusbar.notification.NotifPipelineFlags;
 import com.android.systemui.statusbar.notification.NotificationEntryListener;
 import com.android.systemui.statusbar.notification.NotificationEntryManager;
 import com.android.systemui.statusbar.notification.collection.NotifCollection;
@@ -65,21 +68,18 @@ import com.android.systemui.statusbar.notification.collection.NotifPipeline;
 import com.android.systemui.statusbar.notification.collection.NotificationEntry;
 import com.android.systemui.statusbar.notification.collection.notifcollection.DismissedByUserStats;
 import com.android.systemui.statusbar.notification.collection.notifcollection.NotifCollectionListener;
-import com.android.systemui.statusbar.notification.logging.NotificationLogger;
+import com.android.systemui.statusbar.notification.collection.render.NotificationVisibilityProvider;
 import com.android.systemui.statusbar.phone.BiometricUnlockController;
+import com.android.systemui.statusbar.phone.CentralSurfaces;
 import com.android.systemui.statusbar.phone.KeyguardBypassController;
 import com.android.systemui.statusbar.phone.LockscreenWallpaper;
 import com.android.systemui.statusbar.phone.ScrimController;
 import com.android.systemui.statusbar.phone.ScrimState;
-import com.android.systemui.statusbar.phone.StatusBar;
 import com.android.systemui.statusbar.policy.KeyguardStateController;
 import com.android.systemui.tuner.TunerService;
 import com.android.systemui.util.Utils;
 import com.android.systemui.util.concurrency.DelayableExecutor;
 
-import lineageos.providers.LineageSettings;
-
-import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -100,7 +100,9 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
     public static final boolean DEBUG_MEDIA = false;
 
     private static final String LOCKSCREEN_MEDIA_METADATA =
-            "lineagesecure:" + LineageSettings.Secure.LOCKSCREEN_MEDIA_METADATA;
+            Settings.Secure.LOCKSCREEN_MEDIA_METADATA;
+    private static final String LOCKSCREEN_ALBUMART_FILTER =
+            "system:" + Settings.System.LOCKSCREEN_ALBUMART_FILTER;
 
     private final StatusBarStateController mStatusBarStateController
             = Dependency.get(StatusBarStateController.class);
@@ -109,14 +111,17 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
             KeyguardStateController.class);
     private final KeyguardBypassController mKeyguardBypassController;
     private static final HashSet<Integer> PAUSED_MEDIA_STATES = new HashSet<>();
+    private static final HashSet<Integer> CONNECTING_MEDIA_STATES = new HashSet<>();
     static {
         PAUSED_MEDIA_STATES.add(PlaybackState.STATE_NONE);
         PAUSED_MEDIA_STATES.add(PlaybackState.STATE_STOPPED);
         PAUSED_MEDIA_STATES.add(PlaybackState.STATE_PAUSED);
         PAUSED_MEDIA_STATES.add(PlaybackState.STATE_ERROR);
-        PAUSED_MEDIA_STATES.add(PlaybackState.STATE_CONNECTING);
+        CONNECTING_MEDIA_STATES.add(PlaybackState.STATE_CONNECTING);
+        CONNECTING_MEDIA_STATES.add(PlaybackState.STATE_BUFFERING);
     }
 
+    private final NotificationVisibilityProvider mVisibilityProvider;
     private final NotificationEntryManager mEntryManager;
     private final MediaDataManager mMediaDataManager;
     private final NotifPipeline mNotifPipeline;
@@ -137,10 +142,9 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
 
     private final Context mContext;
     private final ArrayList<MediaListener> mMediaListeners;
-    private final Lazy<Optional<StatusBar>> mStatusBarOptionalLazy;
+    private final Lazy<Optional<CentralSurfaces>> mCentralSurfacesOptionalLazy;
     private final MediaArtworkProcessor mMediaArtworkProcessor;
     private final Set<AsyncTask<?, ?, ?>> mProcessArtworkTasks = new ArraySet<>();
-    private final WallpaperManager mWallpaperManager;
 
     protected NotificationPresenter mPresenter;
     private MediaController mMediaController;
@@ -152,6 +156,7 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
     private ImageView mBackdropBack;
 
     private boolean mShowMediaMetadata;
+    private int mAlbumArtFilter;
 
     private final MediaController.Callback mMediaListener = new MediaController.Callback() {
         @Override
@@ -165,8 +170,6 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
                     clearCurrentMediaNotification();
                 }
                 findAndUpdateMediaNotifications();
-                mStatusBarOptionalLazy.get().map(StatusBar::getVisualizerView).ifPresent(
-                        v -> v.setPlaying(state.getState() == PlaybackState.STATE_PLAYING));
             }
         }
 
@@ -183,36 +186,37 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
     };
 
     /**
-     * Injected constructor. See {@link StatusBarModule}.
+     * Injected constructor. See {@link CentralSurfacesModule}.
      */
     public NotificationMediaManager(
             Context context,
-            Lazy<Optional<StatusBar>> statusBarOptionalLazy,
+            Lazy<Optional<CentralSurfaces>> centralSurfacesOptionalLazy,
             Lazy<NotificationShadeWindowController> notificationShadeWindowController,
+            NotificationVisibilityProvider visibilityProvider,
             NotificationEntryManager notificationEntryManager,
             MediaArtworkProcessor mediaArtworkProcessor,
             KeyguardBypassController keyguardBypassController,
             NotifPipeline notifPipeline,
             NotifCollection notifCollection,
-            FeatureFlags featureFlags,
+            NotifPipelineFlags notifPipelineFlags,
             @Main DelayableExecutor mainExecutor,
             MediaDataManager mediaDataManager,
-            DumpManager dumpManager,
-            WallpaperManager wallpaperManager) {
+            DumpManager dumpManager) {
         mContext = context;
         mMediaArtworkProcessor = mediaArtworkProcessor;
         mKeyguardBypassController = keyguardBypassController;
         mMediaListeners = new ArrayList<>();
         // TODO: use KeyguardStateController#isOccluded to remove this dependency
-        mStatusBarOptionalLazy = statusBarOptionalLazy;
+        mCentralSurfacesOptionalLazy = centralSurfacesOptionalLazy;
         mNotificationShadeWindowController = notificationShadeWindowController;
+        mVisibilityProvider = visibilityProvider;
         mEntryManager = notificationEntryManager;
         mMainExecutor = mainExecutor;
         mMediaDataManager = mediaDataManager;
         mNotifPipeline = notifPipeline;
         mNotifCollection = notifCollection;
 
-        if (!featureFlags.isNewNotifPipelineRenderingEnabled()) {
+        if (!notifPipelineFlags.isNewPipelineEnabled()) {
             setupNEM();
             mUsingNotifPipeline = false;
         } else {
@@ -222,17 +226,26 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
 
         dumpManager.registerDumpable(this);
 
-        mWallpaperManager = wallpaperManager;
-
         final TunerService tunerService = Dependency.get(TunerService.class);
         tunerService.addTunable(this, LOCKSCREEN_MEDIA_METADATA);
+        tunerService.addTunable(this, LOCKSCREEN_ALBUMART_FILTER);
     }
 
     @Override
     public void onTuningChanged(String key, String newValue) {
-        if (LOCKSCREEN_MEDIA_METADATA.equals(key)) {
-            mShowMediaMetadata = TunerService.parseIntegerSwitch(newValue, false);
-            dispatchUpdateMediaMetaData(false /* changed */, true /* allowAnimation */);
+        switch (key) {
+            case LOCKSCREEN_MEDIA_METADATA:
+                mShowMediaMetadata =
+                        TunerService.parseIntegerSwitch(newValue, true);
+                dispatchUpdateMediaMetaData(false /* changed */, true /* allowAnimation */);
+                break;
+            case LOCKSCREEN_ALBUMART_FILTER:
+                mAlbumArtFilter =
+                        TunerService.parseInteger(newValue, 0);
+                dispatchUpdateMediaMetaData(false /* changed */, true /* allowAnimation */);
+                break;
+            default:
+                break;
         }
     }
 
@@ -369,21 +382,10 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
     }
 
     private DismissedByUserStats getDismissedByUserStats(NotificationEntry entry) {
-        final int activeNotificationsCount;
-        if (mUsingNotifPipeline) {
-            activeNotificationsCount = mNotifPipeline.getShadeListCount();
-        } else {
-            activeNotificationsCount = mEntryManager.getActiveNotificationsCount();
-        }
         return new DismissedByUserStats(
                 NotificationStats.DISMISSAL_SHADE, // Add DISMISSAL_MEDIA?
                 NotificationStats.DISMISS_SENTIMENT_NEUTRAL,
-                NotificationVisibility.obtain(
-                        entry.getKey(),
-                        entry.getRanking().getRank(),
-                        activeNotificationsCount,
-                        /* visible= */ true,
-                        NotificationLogger.getNotificationLocation(entry)));
+                mVisibilityProvider.obtain(entry, /* visible= */ true));
     }
 
     private void removeEntry(NotificationEntry entry) {
@@ -397,7 +399,17 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
      * @return true if playing
      */
     public static boolean isPlayingState(int state) {
-        return !PAUSED_MEDIA_STATES.contains(state);
+        return !PAUSED_MEDIA_STATES.contains(state)
+            && !CONNECTING_MEDIA_STATES.contains(state);
+    }
+
+    /**
+     * Check if a state should be considered as connecting
+     * @param state a PlaybackState
+     * @return true if connecting or buffering
+     */
+    public static boolean isConnectingState(int state) {
+        return CONNECTING_MEDIA_STATES.contains(state);
     }
 
     public void setUpWithPresenter(NotificationPresenter presenter) {
@@ -411,6 +423,7 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
         }
     }
 
+    @Nullable
     public String getMediaNotificationKey() {
         return mMediaNotificationKey;
     }
@@ -424,10 +437,7 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
             return null;
         }
         if (mUsingNotifPipeline) {
-            // TODO(b/169655596): Either add O(1) lookup, or cache this icon?
-            return mNotifPipeline.getAllNotifs().stream()
-                .filter(entry -> Objects.equals(entry.getKey(), mMediaNotificationKey))
-                .findAny()
+            return Optional.ofNullable(mNotifPipeline.getEntry(mMediaNotificationKey))
                 .map(entry -> entry.getIcons().getShelfIcon())
                 .map(StatusBarIconView::getSourceIcon)
                 .orElse(null);
@@ -479,7 +489,7 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
      * update this manager's internal state.
      * @return whether the current MediaMetadata changed (and needs to be announced to listeners).
      */
-    private boolean findPlayingMediaNotification(
+    boolean findPlayingMediaNotification(
             @NonNull Collection<NotificationEntry> allNotifications) {
         boolean metaDataChanged = false;
         // Promote the media notification with a controller in 'playing' state, if any.
@@ -490,7 +500,7 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
             if (notif.isMediaNotification()) {
                 final MediaSession.Token token =
                         entry.getSbn().getNotification().extras.getParcelable(
-                                Notification.EXTRA_MEDIA_SESSION);
+                                Notification.EXTRA_MEDIA_SESSION, MediaSession.Token.class);
                 if (token != null) {
                     MediaController aController = new MediaController(mContext, token);
                     if (PlaybackState.STATE_PLAYING
@@ -550,7 +560,7 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
     }
 
     @Override
-    public void dump(@NonNull FileDescriptor fd, @NonNull PrintWriter pw, @NonNull String[] args) {
+    public void dump(@NonNull PrintWriter pw, @NonNull String[] args) {
         pw.print("    mMediaNotificationKey=");
         pw.println(mMediaNotificationKey);
         pw.print("    mMediaController=");
@@ -609,7 +619,7 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
      * Refresh or remove lockscreen artwork from media metadata or the lockscreen wallpaper.
      */
     public void updateMediaMetaData(boolean metaDataChanged, boolean allowEnterAnimation) {
-        Trace.beginSection("StatusBar#updateMediaMetaData");
+        Trace.beginSection("CentralSurfaces#updateMediaMetaData");
         if (!SHOW_LOCKSCREEN_MEDIA_ARTWORK) {
             Trace.endSection();
             return;
@@ -670,14 +680,35 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
         // set media artwork as lockscreen wallpaper if player is playing
         if (bmp != null && (mShowMediaMetadata || !ENABLE_LOCKSCREEN_WALLPAPER) &&
                 PlaybackState.STATE_PLAYING == getMediaControllerPlaybackState(mMediaController)) {
-            artworkDrawable = new BitmapDrawable(mBackdropBack.getResources(), bmp);
+            switch (mAlbumArtFilter) {
+                case 0:
+                default:
+                    artworkDrawable = new BitmapDrawable(mBackdropBack.getResources(), bmp);
+                    break;
+                case 1:
+                    artworkDrawable = new BitmapDrawable(mBackdropBack.getResources(),
+                        ImageHelper.toGrayscale(bmp));
+                    break;
+                case 2:
+                    Drawable aw = new BitmapDrawable(mBackdropBack.getResources(), bmp);
+                    artworkDrawable = new BitmapDrawable(ImageHelper.getColoredBitmap(aw,
+                        mContext.getResources().getColor(R.color.accent_device_default_light)));
+                    break;
+                case 3:
+                    artworkDrawable = new BitmapDrawable(mBackdropBack.getResources(),
+                        ImageHelper.getBlurredImage(mContext, bmp, 7.0f));
+                    break;
+                case 4:
+                    artworkDrawable = new BitmapDrawable(mBackdropBack.getResources(),
+                        ImageHelper.getGrayscaleBlurredImage(mContext, bmp, 7.0f));
+                    break;
+            }
         }
         boolean hasMediaArtwork = artworkDrawable != null;
         boolean allowWhenShade = false;
-        Bitmap lockWallpaper = null;
         // if no media artwork, show normal lockscreen wallpaper
         if (ENABLE_LOCKSCREEN_WALLPAPER && artworkDrawable == null) {
-            lockWallpaper =
+            Bitmap lockWallpaper =
                     mLockscreenWallpaper != null ? mLockscreenWallpaper.getBitmap() : null;
             if (lockWallpaper != null) {
                 artworkDrawable = new LockscreenWallpaper.WallpaperDrawable(
@@ -691,40 +722,13 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
         NotificationShadeWindowController windowController =
                 mNotificationShadeWindowController.get();
         boolean hideBecauseOccluded =
-                mStatusBarOptionalLazy.get().map(StatusBar::isOccluded).orElse(false);
+                mCentralSurfacesOptionalLazy.get()
+                        .map(CentralSurfaces::isOccluded).orElse(false);
 
         final boolean hasArtwork = artworkDrawable != null;
         mColorExtractor.setHasMediaArtwork(hasMediaArtwork);
         if (mScrimController != null) {
             mScrimController.setHasBackdrop(hasArtwork);
-        }
-
-        if (mStatusBarStateController.getState() != StatusBarState.SHADE) {
-            boolean isScreenFullyOff =
-                    !mStatusBarOptionalLazy.get().map(StatusBar::isScreenFullyOff).orElse(false);
-            if (!mKeyguardStateController.isKeyguardFadingAway() && isScreenFullyOff) {
-                mStatusBarOptionalLazy.get().map(StatusBar::getVisualizerView).ifPresent(
-                        v -> v.setPlaying(getMediaControllerPlaybackState(mMediaController)
-                                == PlaybackState.STATE_PLAYING));
-            }
-
-            Bitmap bitmap;
-
-            if (artworkDrawable instanceof BitmapDrawable) {
-                // always use current backdrop to color eq
-                bitmap = ((BitmapDrawable) artworkDrawable).getBitmap();
-            } else if (lockWallpaper instanceof Bitmap) {
-                // use lockscreen wallpaper in case user set one
-                bitmap = lockWallpaper.getConfig() == Bitmap.Config.HARDWARE
-                        ? lockWallpaper.copy(Bitmap.Config.ARGB_8888, false)
-                        : lockWallpaper;
-            } else {
-                // use regular wallpaper
-                bitmap = mWallpaperManager.getBitmap(false);
-            }
-
-            mStatusBarOptionalLazy.get().map(StatusBar::getVisualizerView).ifPresent(
-                    v -> v.setBitmap(bitmap));
         }
 
         if ((hasArtwork || DEBUG_MEDIA_FAKE_ARTWORK)
@@ -792,12 +796,10 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
                 }
                 boolean cannotAnimateDoze = mStatusBarStateController.isDozing()
                         && !ScrimState.AOD.getAnimateChange();
-                boolean needsBypassFading = mKeyguardStateController.isBypassFadingAnimation();
                 if (((mBiometricUnlockController != null && mBiometricUnlockController.getMode()
                         == BiometricUnlockController.MODE_WAKE_AND_UNLOCK_PULSING
-                                || cannotAnimateDoze) && !needsBypassFading)
+                                || cannotAnimateDoze))
                         || hideBecauseOccluded) {
-
                     // We are unlocking directly - no animation!
                     mBackdrop.setVisibility(View.GONE);
                     mBackdropBack.setImageDrawable(null);
@@ -862,7 +864,7 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
     };
 
     private Bitmap processArtwork(Bitmap artwork) {
-        return mMediaArtworkProcessor.processArtwork(mContext, artwork);
+        return mMediaArtworkProcessor.processArtwork(mContext, artwork, getLockScreenMediaBlurLevel());
     }
 
     @MainThread
@@ -925,5 +927,12 @@ public class NotificationMediaManager implements Dumpable, TunerService.Tunable 
          */
         default void onPrimaryMetadataOrStateChanged(MediaMetadata metadata,
                 @PlaybackState.State int state) {}
+    }
+
+    private float getLockScreenMediaBlurLevel() {
+        float level = (float) Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.OMNI_LOCKSCREEN_MEDIA_BLUR, 25,
+                UserHandle.USER_CURRENT) / 100;
+        return level;
     }
 }

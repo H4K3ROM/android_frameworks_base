@@ -16,33 +16,24 @@
 
 package com.android.keyguard;
 
+import static com.android.internal.jank.InteractionJankMonitor.CUJ_LOCKSCREEN_PIN_APPEAR;
+import static com.android.internal.jank.InteractionJankMonitor.CUJ_LOCKSCREEN_PIN_DISAPPEAR;
 import static com.android.systemui.statusbar.policy.DevicePostureController.DEVICE_POSTURE_HALF_OPENED;
 import static com.android.systemui.statusbar.policy.DevicePostureController.DEVICE_POSTURE_UNKNOWN;
 
 import android.content.Context;
 import android.content.res.Configuration;
-import android.content.res.Resources;
 import android.util.AttributeSet;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.animation.AnimationUtils;
 
-import androidx.constraintlayout.helper.widget.Flow;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.constraintlayout.widget.ConstraintSet;
 
-import com.android.internal.jank.InteractionJankMonitor;
 import com.android.settingslib.animation.AppearAnimationUtils;
 import com.android.settingslib.animation.DisappearAnimationUtils;
 import com.android.systemui.R;
 import com.android.systemui.statusbar.policy.DevicePostureController.DevicePostureInt;
-
-import lineageos.providers.LineageSettings;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * Displays a PIN pad for unlocking.
@@ -56,9 +47,6 @@ public class KeyguardPINView extends KeyguardPinBasedInputView {
     private int mDisappearYTranslation;
     private View[][] mViews;
     @DevicePostureInt private int mLastDevicePosture = DEVICE_POSTURE_UNKNOWN;
-    private boolean mScramblePin;
-
-    private List<Integer> mNumbers = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 0);
 
     public KeyguardPINView(Context context) {
         this(context, null);
@@ -100,45 +88,48 @@ public class KeyguardPINView extends KeyguardPinBasedInputView {
     }
 
     private void updateMargins() {
-        Resources res = mContext.getResources();
-
         // Re-apply everything to the keys...
-        int verticalMargin = res.getDimensionPixelSize(R.dimen.num_pad_entry_row_margin_bottom);
-        int horizontalMargin = res.getDimensionPixelSize(R.dimen.num_pad_key_margin_end);
-        String ratio = res.getString(R.string.num_pad_key_ratio);
+        int bottomMargin = mContext.getResources().getDimensionPixelSize(
+                R.dimen.num_pad_entry_row_margin_bottom);
+        int rightMargin = mContext.getResources().getDimensionPixelSize(
+                R.dimen.num_pad_key_margin_end);
+        String ratio = mContext.getResources().getString(R.string.num_pad_key_ratio);
 
-        Flow flow = (Flow) mContainer.findViewById(R.id.flow1);
-        flow.setHorizontalGap(horizontalMargin);
-        flow.setVerticalGap(verticalMargin);
+        // mView contains all Views that make up the PIN pad; row0 = the entry test field, then
+        // rows 1-4 contain the buttons. Iterate over all views that make up the buttons in the pad,
+        // and re-set all the margins.
+        for (int row = 1; row < 5; row++) {
+            for (int column = 0; column < 3; column++) {
+                View key = mViews[row][column];
+
+                ConstraintLayout.LayoutParams lp =
+                        (ConstraintLayout.LayoutParams) key.getLayoutParams();
+
+                lp.dimensionRatio = ratio;
+
+                // Don't set any margins on the last row of buttons.
+                if (row != 4) {
+                    lp.bottomMargin = bottomMargin;
+                }
+
+                // Don't set margins on the rightmost buttons.
+                if (column != 2) {
+                    lp.rightMargin = rightMargin;
+                }
+
+                key.setLayoutParams(lp);
+            }
+        }
 
         // Update the guideline based on the device posture...
-        float halfOpenPercentage = res.getFloat(R.dimen.half_opened_bouncer_height_ratio);
+        float halfOpenPercentage =
+                mContext.getResources().getFloat(R.dimen.half_opened_bouncer_height_ratio);
 
         ConstraintSet cs = new ConstraintSet();
         cs.clone(mContainer);
         cs.setGuidelinePercent(R.id.pin_pad_top_guideline,
                 mLastDevicePosture == DEVICE_POSTURE_HALF_OPENED ? halfOpenPercentage : 0.0f);
         cs.applyTo(mContainer);
-
-        // Password entry area
-        int passwordHeight = res.getDimensionPixelSize(R.dimen.keyguard_password_height);
-        View pinEntry = findViewById(getPasswordTextViewId());
-        ViewGroup.LayoutParams lp = pinEntry.getLayoutParams();
-        lp.height = passwordHeight;
-        pinEntry.setLayoutParams(lp);
-
-        // Below row0
-        View row0 = findViewById(R.id.row0);
-        row0.setPadding(0, 0, 0, verticalMargin);
-
-        // Above the emergency contact area
-        int marginTop = res.getDimensionPixelSize(R.dimen.keyguard_eca_top_margin);
-        View eca = findViewById(R.id.keyguard_selector_fade_container);
-        if (eca != null) {
-            ViewGroup.MarginLayoutParams mLp = (ViewGroup.MarginLayoutParams) eca.getLayoutParams();
-            mLp.topMargin = marginTop;
-            eca.setLayoutParams(mLp);
-        }
     }
 
     @Override
@@ -169,31 +160,6 @@ public class KeyguardPINView extends KeyguardPinBasedInputView {
                 new View[]{
                         null, mEcaView, null
                 }};
-
-        mScramblePin = LineageSettings.System.getInt(getContext().getContentResolver(),
-                LineageSettings.System.LOCKSCREEN_PIN_SCRAMBLE_LAYOUT, 0) == 1;
-        if (mScramblePin) {
-            Collections.shuffle(mNumbers);
-            // get all children who are NumPadKeys
-            List<NumPadKey> views = new ArrayList<>();
-
-            // mView contains all Views that make up the PIN pad; row0 = the entry test field, then
-            // rows 1-4 contain the buttons. Iterate over all views that make up the buttons in the
-            // pad
-            for (int row = 1; row < 5; row++) {
-                for (int column = 0; column < 3; column++) {
-                    View key = mViews[row][column];
-                    if (key instanceof NumPadKey) {
-                        views.add((NumPadKey) key);
-                    }
-                }
-            }
-            // reset the digits in the views
-            for (int i = 0; i < mNumbers.size(); i++) {
-                NumPadKey view = views.get(i);
-                view.setDigit(mNumbers.get(i));
-            }
-        }
     }
 
     @Override
@@ -208,7 +174,7 @@ public class KeyguardPINView extends KeyguardPinBasedInputView {
         setTranslationY(mAppearAnimationUtils.getStartTranslation());
         AppearAnimationUtils.startTranslationYAnimation(this, 0 /* delay */, 500 /* duration */,
                 0, mAppearAnimationUtils.getInterpolator(),
-                getAnimationListener(InteractionJankMonitor.CUJ_LOCKSCREEN_PIN_APPEAR));
+                getAnimationListener(CUJ_LOCKSCREEN_PIN_APPEAR));
         mAppearAnimationUtils.startAnimation2d(mViews,
                 new Runnable() {
                     @Override
@@ -223,19 +189,18 @@ public class KeyguardPINView extends KeyguardPinBasedInputView {
 
         enableClipping(false);
         setTranslationY(0);
-        AppearAnimationUtils.startTranslationYAnimation(this, 0 /* delay */, 280 /* duration */,
-                mDisappearYTranslation, mDisappearAnimationUtils.getInterpolator(),
-                getAnimationListener(InteractionJankMonitor.CUJ_LOCKSCREEN_PIN_DISAPPEAR));
         DisappearAnimationUtils disappearAnimationUtils = needsSlowUnlockTransition
                         ? mDisappearAnimationUtilsLocked
                         : mDisappearAnimationUtils;
-        disappearAnimationUtils.startAnimation2d(mViews,
-                () -> {
+        disappearAnimationUtils.createAnimation(
+                this, 0, 200, mDisappearYTranslation, false,
+                mDisappearAnimationUtils.getInterpolator(), () -> {
                     enableClipping(true);
                     if (finishRunnable != null) {
                         finishRunnable.run();
                     }
-                });
+                },
+                getAnimationListener(CUJ_LOCKSCREEN_PIN_DISAPPEAR));
         return true;
     }
 
@@ -243,14 +208,6 @@ public class KeyguardPINView extends KeyguardPinBasedInputView {
         mContainer.setClipToPadding(enable);
         mContainer.setClipChildren(enable);
         setClipChildren(enable);
-    }
-
-    @Override
-    protected int getNumberIndex(int number) {
-        if (mScramblePin) {
-            return (mNumbers.indexOf(number) + 1) % mNumbers.size();
-        }
-        return super.getNumberIndex(number);
     }
 
     @Override

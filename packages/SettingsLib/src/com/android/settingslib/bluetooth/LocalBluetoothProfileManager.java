@@ -19,13 +19,15 @@ package com.android.settingslib.bluetooth;
 import android.bluetooth.BluetoothA2dp;
 import android.bluetooth.BluetoothA2dpSink;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDeviceGroup;
+import android.bluetooth.BluetoothCsipSetCoordinator;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothHeadset;
 import android.bluetooth.BluetoothHeadsetClient;
 import android.bluetooth.BluetoothHearingAid;
 import android.bluetooth.BluetoothHidDevice;
 import android.bluetooth.BluetoothHidHost;
+import android.bluetooth.BluetoothLeAudio;
+import android.bluetooth.BluetoothLeBroadcastAssistant;
 import android.bluetooth.BluetoothMap;
 import android.bluetooth.BluetoothMapClient;
 import android.bluetooth.BluetoothPan;
@@ -34,11 +36,9 @@ import android.bluetooth.BluetoothPbapClient;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothSap;
 import android.bluetooth.BluetoothUuid;
-import android.bluetooth.BluetoothVcp;
 import android.content.Context;
 import android.content.Intent;
 import android.os.ParcelUuid;
-import android.os.SystemProperties;
 import android.util.Log;
 
 import androidx.annotation.VisibleForTesting;
@@ -46,16 +46,12 @@ import androidx.annotation.VisibleForTesting;
 import com.android.internal.util.ArrayUtils;
 import com.android.internal.util.CollectionUtils;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 
 
 /**
@@ -92,29 +88,27 @@ public class LocalBluetoothProfileManager {
 
     private final Context mContext;
     private final CachedBluetoothDeviceManager mDeviceManager;
-    protected final BluetoothEventManager mEventManager;
+    private final BluetoothEventManager mEventManager;
 
     private A2dpProfile mA2dpProfile;
     private A2dpSinkProfile mA2dpSinkProfile;
-    private DeviceGroupClientProfile mGroupClientProfile;
     private HeadsetProfile mHeadsetProfile;
     private HfpClientProfile mHfpClientProfile;
     private MapProfile mMapProfile;
     private MapClientProfile mMapClientProfile;
     private HidProfile mHidProfile;
-    private LocalBluetoothProfile mBCProfile;
     private HidDeviceProfile mHidDeviceProfile;
     private OppProfile mOppProfile;
     private PanProfile mPanProfile;
     private PbapClientProfile mPbapClientProfile;
     private PbapServerProfile mPbapProfile;
     private HearingAidProfile mHearingAidProfile;
+    private CsipSetCoordinatorProfile mCsipSetCoordinatorProfile;
+    private LeAudioProfile mLeAudioProfile;
+    private LocalBluetoothLeBroadcast mLeAudioBroadcast;
+    private LocalBluetoothLeBroadcastAssistant mLeAudioBroadcastAssistant;
     private SapProfile mSapProfile;
-    private Object mBroadcastProfileObject;
-    private VcpProfile mVcpProfile;
-
-    private static final String BC_CONNECTION_STATE_CHANGED =
-            "android.bluetooth.bc.profile.action.CONNECTION_STATE_CHANGED";
+    private VolumeControlProfile mVolumeControlProfile;
 
     /**
      * Mapping from profile name, e.g. "HEADSET" to profile object.
@@ -168,10 +162,8 @@ public class LocalBluetoothProfileManager {
         if (mHfpClientProfile == null && supportedList.contains(BluetoothProfile.HEADSET_CLIENT)) {
             if (DEBUG) Log.d(TAG, "Adding local HfpClient profile");
             mHfpClientProfile = new HfpClientProfile(mContext, mDeviceManager, this);
-            addHeadsetProfile(mHfpClientProfile, HfpClientProfile.NAME,
-                    BluetoothHeadsetClient.ACTION_CONNECTION_STATE_CHANGED,
-                    BluetoothHeadsetClient.ACTION_AUDIO_STATE_CHANGED,
-                    BluetoothHeadsetClient.STATE_AUDIO_DISCONNECTED);
+            addProfile(mHfpClientProfile, HfpClientProfile.NAME,
+                    BluetoothHeadsetClient.ACTION_CONNECTION_STATE_CHANGED);
         }
         if (mMapClientProfile == null && supportedList.contains(BluetoothProfile.MAP_CLIENT)) {
             if (DEBUG) Log.d(TAG, "Adding local MAP CLIENT profile");
@@ -227,23 +219,6 @@ public class LocalBluetoothProfileManager {
             addProfile(mPbapClientProfile, PbapClientProfile.NAME,
                     BluetoothPbapClient.ACTION_CONNECTION_STATE_CHANGED);
         }
-        if (mBCProfile == null && supportedList.contains(BluetoothProfile.BC_PROFILE)) {
-            if (DEBUG) Log.d(TAG, "Adding local BC profile");
-           try {
-              Class<?> classBCProfile =
-                  Class.forName("com.android.settingslib.bluetooth.BCProfile");
-              Constructor ctor;
-              ctor = classBCProfile.getDeclaredConstructor(new Class[] {Context.class,
-                                                          CachedBluetoothDeviceManager.class,
-                                                          LocalBluetoothProfileManager.class});
-              mBCProfile = (LocalBluetoothProfile)ctor.newInstance(mContext, mDeviceManager, this);
-              addProfile(mBCProfile, "BCProfile",
-                    BC_CONNECTION_STATE_CHANGED);
-            } catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException
-                  | InstantiationException | InvocationTargetException e) {
-              e.printStackTrace();
-            }
-        }
         if (mSapProfile == null && supportedList.contains(BluetoothProfile.SAP)) {
             if (DEBUG) {
                 Log.d(TAG, "Adding local SAP profile");
@@ -251,35 +226,51 @@ public class LocalBluetoothProfileManager {
             mSapProfile = new SapProfile(mContext, mDeviceManager, this);
             addProfile(mSapProfile, SapProfile.NAME, BluetoothSap.ACTION_CONNECTION_STATE_CHANGED);
         }
-        if (mBroadcastProfileObject == null && supportedList.contains(BluetoothProfile.BROADCAST)) {
+        if (mVolumeControlProfile == null
+                && supportedList.contains(BluetoothProfile.VOLUME_CONTROL)) {
             if (DEBUG) {
-                Log.d(TAG, "Adding local Broadcast profile");
+                Log.d(TAG, "Adding local Volume Control profile");
             }
-            try {
-              //mBroadcastProfileObject = new BroadcastProfile(mContext);
-              Class<?> classBroadcastProfile =
-                  Class.forName("com.android.settingslib.bluetooth.BroadcastProfile");
-              Constructor ctor;
-              ctor = classBroadcastProfile.getDeclaredConstructor(new Class[] {Context.class});
-              mBroadcastProfileObject = ctor.newInstance(mContext);
-              mProfileNameMap.put("Broadcast",
-                  (LocalBluetoothProfile) mBroadcastProfileObject);
-            } catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException
-                  | InstantiationException | InvocationTargetException e) {
-              e.printStackTrace();
+            mVolumeControlProfile = new VolumeControlProfile();
+            // Note: no event handler for VCP, only for being connectable.
+            mProfileNameMap.put(VolumeControlProfile.NAME, mVolumeControlProfile);
+        }
+        if (mLeAudioProfile == null && supportedList.contains(BluetoothProfile.LE_AUDIO)) {
+            if (DEBUG) {
+                Log.d(TAG, "Adding local LE_AUDIO profile");
             }
+            mLeAudioProfile = new LeAudioProfile(mContext, mDeviceManager, this);
+            addProfile(mLeAudioProfile, LeAudioProfile.NAME,
+                    BluetoothLeAudio.ACTION_LE_AUDIO_CONNECTION_STATE_CHANGED);
         }
-        if (mGroupClientProfile == null && supportedList.contains(BluetoothProfile.GROUP_CLIENT)) {
-            if (DEBUG) Log.d(TAG, "Adding local GROUP CLIENT profile");
-            mGroupClientProfile = new DeviceGroupClientProfile(mContext, mDeviceManager, this);
-            addProfile(mGroupClientProfile, mGroupClientProfile.NAME,
-                    BluetoothDeviceGroup.ACTION_CONNECTION_STATE_CHANGED);
+        if (mLeAudioBroadcast == null
+                && supportedList.contains(BluetoothProfile.LE_AUDIO_BROADCAST)) {
+            if (DEBUG) {
+                Log.d(TAG, "Adding local LE_AUDIO_BROADCAST profile");
+            }
+            mLeAudioBroadcast = new LocalBluetoothLeBroadcast(mContext);
+            // no event handler for the LE boradcast.
+            mProfileNameMap.put(LocalBluetoothLeBroadcast.NAME, mLeAudioBroadcast);
         }
-        if (mVcpProfile == null && supportedList.contains(BluetoothProfile.VCP)) {
-            if(DEBUG) Log.d(TAG, "Adding local VCP profile");
-            mVcpProfile = new VcpProfile(mContext, mDeviceManager, this);
-            addProfile(mVcpProfile, VcpProfile.NAME,
-                    BluetoothVcp.ACTION_CONNECTION_STATE_CHANGED);
+        if (mLeAudioBroadcastAssistant == null
+                && supportedList.contains(BluetoothProfile.LE_AUDIO_BROADCAST_ASSISTANT)) {
+            if (DEBUG) {
+                Log.d(TAG, "Adding local LE_AUDIO_BROADCAST_ASSISTANT profile");
+            }
+            mLeAudioBroadcastAssistant = new LocalBluetoothLeBroadcastAssistant(mContext,
+                    mDeviceManager, this);
+            addProfile(mLeAudioBroadcastAssistant, LocalBluetoothLeBroadcast.NAME,
+                    BluetoothLeBroadcastAssistant.ACTION_CONNECTION_STATE_CHANGED);
+        }
+        if (mCsipSetCoordinatorProfile == null
+                && supportedList.contains(BluetoothProfile.CSIP_SET_COORDINATOR)) {
+            if (DEBUG) {
+                Log.d(TAG, "Adding local CSIP set coordinator profile");
+            }
+            mCsipSetCoordinatorProfile =
+                    new CsipSetCoordinatorProfile(mContext, mDeviceManager, this);
+            addProfile(mCsipSetCoordinatorProfile, mCsipSetCoordinatorProfile.NAME,
+                    BluetoothCsipSetCoordinator.ACTION_CSIS_CONNECTION_STATE_CHANGED);
         }
         mEventManager.registerProfileIntentReceiver();
     }
@@ -349,6 +340,11 @@ public class LocalBluetoothProfileManager {
             if (getHearingAidProfile() != null &&
                 mProfile instanceof HearingAidProfile &&
                 (newState == BluetoothProfile.STATE_CONNECTED)) {
+                final int side = getHearingAidProfile().getDeviceSide(cachedDevice.getDevice());
+                final int mode = getHearingAidProfile().getDeviceMode(cachedDevice.getDevice());
+                cachedDevice.setDeviceSide(side);
+                cachedDevice.setDeviceMode(mode);
+
                 // Check if the HiSyncID has being initialized
                 if (cachedDevice.getHiSyncId() == BluetoothHearingAid.HI_SYNC_ID_INVALID) {
                     long newHiSyncId = getHearingAidProfile().getHiSyncId(cachedDevice.getDevice());
@@ -357,11 +353,35 @@ public class LocalBluetoothProfileManager {
                     }
                 }
             }
+
+            if (getCsipSetCoordinatorProfile() != null
+                    && mProfile instanceof CsipSetCoordinatorProfile
+                    && newState == BluetoothProfile.STATE_CONNECTED) {
+                // Check if the GroupID has being initialized
+                if (cachedDevice.getGroupId() == BluetoothCsipSetCoordinator.GROUP_ID_INVALID) {
+                    final Map<Integer, ParcelUuid> groupIdMap = getCsipSetCoordinatorProfile()
+                            .getGroupUuidMapByDevice(cachedDevice.getDevice());
+                    if (groupIdMap != null) {
+                        for (Map.Entry<Integer, ParcelUuid> entry: groupIdMap.entrySet()) {
+                            if (entry.getValue().equals(BluetoothUuid.CAP)) {
+                                cachedDevice.setGroupId(entry.getKey());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             cachedDevice.onProfileStateChanged(mProfile, newState);
             // Dispatch profile changed after device update
-            if (!(cachedDevice.getHiSyncId() != BluetoothHearingAid.HI_SYNC_ID_INVALID
-                    && mDeviceManager.onProfileConnectionStateChangedIfProcessed(cachedDevice,
-                    newState))) {
+            boolean needDispatchProfileConnectionState = true;
+            if (cachedDevice.getHiSyncId() != BluetoothHearingAid.HI_SYNC_ID_INVALID
+                    || cachedDevice.getGroupId() != BluetoothCsipSetCoordinator.GROUP_ID_INVALID) {
+                needDispatchProfileConnectionState = !mDeviceManager
+                        .onProfileConnectionStateChangedIfProcessed(cachedDevice, newState,
+                        mProfile.getProfileId());
+            }
+            if (needDispatchProfileConnectionState) {
                 cachedDevice.refresh();
                 mEventManager.dispatchProfileConnectionStateChanged(cachedDevice, newState,
                         mProfile.getProfileId());
@@ -502,17 +522,19 @@ public class LocalBluetoothProfileManager {
         return mHearingAidProfile;
     }
 
+    public LeAudioProfile getLeAudioProfile() {
+        return mLeAudioProfile;
+    }
+
+    public LocalBluetoothLeBroadcast getLeAudioBroadcastProfile() {
+        return mLeAudioBroadcast;
+    }
+    public LocalBluetoothLeBroadcastAssistant getLeAudioBroadcastAssistantProfile() {
+        return mLeAudioBroadcastAssistant;
+    }
+
     SapProfile getSapProfile() {
         return mSapProfile;
-    }
-
-    public Object getBroadcastProfile() {
-        return mBroadcastProfileObject;
-    }
-
-    public LocalBluetoothProfile getBCProfile() {
-        Log.d(TAG, "getBCProfile returning: " + mBCProfile);
-        return mBCProfile;
     }
 
     @VisibleForTesting
@@ -525,12 +547,8 @@ public class LocalBluetoothProfileManager {
         return mHidDeviceProfile;
     }
 
-    public DeviceGroupClientProfile getDeviceGroupClientProfile() {
-        return mGroupClientProfile;
-    }
-
-    public VcpProfile getVcpProfile() {
-        return mVcpProfile;
+    public CsipSetCoordinatorProfile getCsipSetCoordinatorProfile() {
+        return mCsipSetCoordinatorProfile;
     }
 
     /**
@@ -642,16 +660,28 @@ public class LocalBluetoothProfileManager {
             removedProfiles.remove(mHearingAidProfile);
         }
 
+        if (ArrayUtils.contains(uuids, BluetoothUuid.LE_AUDIO) && mLeAudioProfile != null) {
+            profiles.add(mLeAudioProfile);
+            removedProfiles.remove(mLeAudioProfile);
+        }
+
         if (mSapProfile != null && ArrayUtils.contains(uuids, BluetoothUuid.SAP)) {
             profiles.add(mSapProfile);
             removedProfiles.remove(mSapProfile);
         }
 
-        if (mBCProfile != null) {
-            profiles.add(mBCProfile);
-            removedProfiles.remove(mBCProfile);
-            if(DEBUG) Log.d(TAG, "BC profile removed");
+        if (mVolumeControlProfile != null
+                && ArrayUtils.contains(uuids, BluetoothUuid.VOLUME_CONTROL)) {
+            profiles.add(mVolumeControlProfile);
+            removedProfiles.remove(mVolumeControlProfile);
         }
+
+        if (mCsipSetCoordinatorProfile != null
+                && ArrayUtils.contains(uuids, BluetoothUuid.COORDINATED_SET)) {
+            profiles.add(mCsipSetCoordinatorProfile);
+            removedProfiles.remove(mCsipSetCoordinatorProfile);
+        }
+
         if (DEBUG) {
             Log.d(TAG,"New Profiles" + profiles.toString());
         }

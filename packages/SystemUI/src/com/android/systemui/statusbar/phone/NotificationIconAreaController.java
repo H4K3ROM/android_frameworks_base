@@ -7,6 +7,8 @@ import android.graphics.Color;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Trace;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -18,6 +20,7 @@ import androidx.collection.ArrayMap;
 import com.android.internal.statusbar.StatusBarIcon;
 import com.android.internal.util.ContrastColorUtil;
 import com.android.settingslib.Utils;
+import com.android.systemui.Dependency;
 import com.android.systemui.R;
 import com.android.systemui.animation.Interpolators;
 import com.android.systemui.dagger.SysUISingleton;
@@ -40,11 +43,11 @@ import com.android.systemui.statusbar.notification.collection.ListEntry;
 import com.android.systemui.statusbar.notification.collection.NotificationEntry;
 import com.android.systemui.statusbar.notification.stack.AnimationProperties;
 import com.android.systemui.statusbar.window.StatusBarWindowController;
+import com.android.systemui.tuner.TunerService;
 import com.android.wm.shell.bubbles.Bubbles;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -59,7 +62,11 @@ public class NotificationIconAreaController implements
         DarkReceiver,
         StatusBarStateController.StateListener,
         NotificationWakeUpCoordinator.WakeUpListener,
+        TunerService.Tunable,
         DemoMode {
+
+    public static final String STATUSBAR_COLORED_ICONS =
+            "system:" + Settings.System.STATUSBAR_COLORED_ICONS;
 
     public static final String HIGH_PRIORITY = "high_priority";
     private static final long AOD_ICONS_APPEAR_DURATION = 200;
@@ -73,22 +80,18 @@ public class NotificationIconAreaController implements
     private final DozeParameters mDozeParameters;
     private final Optional<Bubbles> mBubblesOptional;
     private final StatusBarWindowController mStatusBarWindowController;
-    private final UnlockedScreenOffAnimationController mUnlockedScreenOffAnimationController;
+    private final ScreenOffAnimationController mScreenOffAnimationController;
 
     private int mIconSize;
     private int mIconHPadding;
     private int mIconTint = Color.WHITE;
-    private int mCenteredIconTint = Color.WHITE;
 
     private List<ListEntry> mNotificationEntries = List.of();
     protected View mNotificationIconArea;
     private NotificationIconContainer mNotificationIcons;
     private NotificationIconContainer mShelfIcons;
-    protected View mCenteredIconArea;
-    private NotificationIconContainer mCenteredIcon;
     private NotificationIconContainer mAodIcons;
-    private StatusBarIconView mCenteredIconView;
-    private final Rect mTintArea = new Rect();
+    private final ArrayList<Rect> mTintAreas = new ArrayList<>();
     private Context mContext;
 
     private final DemoModeController mDemoModeController;
@@ -99,6 +102,8 @@ public class NotificationIconAreaController implements
     private int mAodIconTint;
     private boolean mAodIconsVisible;
     private boolean mShowLowPriority = true;
+
+    private boolean mNewIconStyle = false;
 
     @VisibleForTesting
     final NotificationListener.NotificationSettingsListener mSettingsListener =
@@ -123,7 +128,7 @@ public class NotificationIconAreaController implements
             DemoModeController demoModeController,
             DarkIconDispatcher darkIconDispatcher,
             StatusBarWindowController statusBarWindowController,
-            UnlockedScreenOffAnimationController unlockedScreenOffAnimationController) {
+            ScreenOffAnimationController screenOffAnimationController) {
         mContrastColorUtil = ContrastColorUtil.getInstance(context);
         mContext = context;
         mStatusBarStateController = statusBarStateController;
@@ -137,12 +142,31 @@ public class NotificationIconAreaController implements
         mDemoModeController = demoModeController;
         mDemoModeController.addCallback(this);
         mStatusBarWindowController = statusBarWindowController;
-        mUnlockedScreenOffAnimationController = unlockedScreenOffAnimationController;
+        mScreenOffAnimationController = screenOffAnimationController;
         notificationListener.addNotificationSettingsListener(mSettingsListener);
 
         initializeNotificationAreaViews(context);
         reloadAodColor();
         darkIconDispatcher.addDarkReceiver(this);
+
+        final TunerService tunerService = Dependency.get(TunerService.class);
+        tunerService.addTunable(this, STATUSBAR_COLORED_ICONS);
+    }
+
+    @Override
+    public void onTuningChanged(String key, String newValue) {
+        switch (key) {
+            case STATUSBAR_COLORED_ICONS:
+                boolean newIconStyle =
+                    TunerService.parseIntegerSwitch(newValue, false);
+                if (mNewIconStyle != newIconStyle) {
+                    mNewIconStyle = newIconStyle;
+                    updateNotificationIcons();
+                }
+                break;
+            default:
+                break;
+        }
     }
 
     protected View inflateIconArea(LayoutInflater inflater) {
@@ -159,8 +183,6 @@ public class NotificationIconAreaController implements
         mNotificationIconArea = inflateIconArea(layoutInflater);
         mNotificationIcons = mNotificationIconArea.findViewById(R.id.notificationIcons);
 
-        mCenteredIconArea = layoutInflater.inflate(R.layout.center_icon_area, null);
-        mCenteredIcon = mCenteredIconArea.findViewById(R.id.centeredIcon);
     }
 
     /**
@@ -208,10 +230,6 @@ public class NotificationIconAreaController implements
             View child = mNotificationIcons.getChildAt(i);
             child.setLayoutParams(params);
         }
-        for (int i = 0; i < mCenteredIcon.getChildCount(); i++) {
-            View child = mCenteredIcon.getChildAt(i);
-            child.setLayoutParams(params);
-        }
         if (mShelfIcons != null) {
             for (int i = 0; i < mShelfIcons.getChildCount(); i++) {
                 View child = mShelfIcons.getChildAt(i);
@@ -248,32 +266,18 @@ public class NotificationIconAreaController implements
     }
 
     /**
-     * Returns the view that represents the centered notification area.
-     */
-    public View getCenteredNotificationAreaView() {
-        return mCenteredIconArea;
-    }
-
-    /**
      * See {@link com.android.systemui.statusbar.policy.DarkIconDispatcher#setIconsDarkArea}.
      * Sets the color that should be used to tint any icons in the notification area.
      *
-     * @param tintArea the area in which to tint the icons, specified in screen coordinates
+     * @param tintAreas the areas in which to tint the icons, specified in screen coordinates
      * @param darkIntensity
      */
-    public void onDarkChanged(Rect tintArea, float darkIntensity, int iconTint) {
-        if (tintArea == null) {
-            mTintArea.setEmpty();
-        } else {
-            mTintArea.set(tintArea);
-        }
+    public void onDarkChanged(ArrayList<Rect> tintAreas, float darkIntensity, int iconTint) {
+        mTintAreas.clear();
+        mTintAreas.addAll(tintAreas);
 
-        if (DarkIconDispatcher.isInArea(tintArea, mNotificationIconArea)) {
+        if (DarkIconDispatcher.isInAreas(tintAreas, mNotificationIconArea)) {
             mIconTint = iconTint;
-        }
-
-        if (DarkIconDispatcher.isInArea(tintArea, mCenteredIconArea)) {
-            mCenteredIconTint = iconTint;
         }
 
         applyNotificationIconsTint();
@@ -281,18 +285,7 @@ public class NotificationIconAreaController implements
 
     protected boolean shouldShowNotificationIcon(NotificationEntry entry,
             boolean showAmbient, boolean showLowPriority, boolean hideDismissed,
-            boolean hideRepliedMessages, boolean hideCurrentMedia, boolean hideCenteredIcon,
-            boolean hidePulsing, boolean onlyShowCenteredIcon) {
-
-        final boolean isCenteredNotificationIcon = mCenteredIconView != null
-                && entry.getIcons().getCenteredIcon() != null
-                && Objects.equals(entry.getIcons().getCenteredIcon(), mCenteredIconView);
-        if (onlyShowCenteredIcon) {
-            return isCenteredNotificationIcon;
-        }
-        if (hideCenteredIcon && isCenteredNotificationIcon && !entry.isRowHeadsUp()) {
-            return false;
-        }
+            boolean hideRepliedMessages, boolean hideCurrentMedia, boolean hidePulsing) {
         if (entry.getRanking().isAmbient() && !showAmbient) {
             return false;
         }
@@ -341,7 +334,6 @@ public class NotificationIconAreaController implements
         Trace.beginSection("NotificationIconAreaController.updateNotificationIcons");
         updateStatusBarIcons();
         updateShelfIcons();
-        updateCenterIcon();
         updateAodNotificationIcons();
 
         applyNotificationIconsTint();
@@ -349,15 +341,16 @@ public class NotificationIconAreaController implements
     }
 
     private void updateShelfIcons() {
+        if (mShelfIcons == null) {
+            return;
+        }
         updateIconsForLayout(entry -> entry.getIcons().getShelfIcon(), mShelfIcons,
                 true /* showAmbient */,
                 true /* showLowPriority */,
                 false /* hideDismissed */,
                 false /* hideRepliedMessages */,
                 false /* hideCurrentMedia */,
-                false /* hide centered icon */,
-                false /* hidePulsing */,
-                false /* onlyShowCenteredIcon */);
+                false /* hidePulsing */);
     }
 
     public void updateStatusBarIcons() {
@@ -367,21 +360,7 @@ public class NotificationIconAreaController implements
                 true /* hideDismissed */,
                 true /* hideRepliedMessages */,
                 false /* hideCurrentMedia */,
-                true /* hide centered icon */,
-                false /* hidePulsing */,
-                false /* onlyShowCenteredIcon */);
-    }
-
-    private void updateCenterIcon() {
-        updateIconsForLayout(entry -> entry.getIcons().getCenteredIcon(), mCenteredIcon,
-                false /* showAmbient */,
-                true /* showLowPriority */,
-                false /* hideDismissed */,
-                false /* hideRepliedMessages */,
-                false /* hideCurrentMedia */,
-                false /* hide centered icon */,
-                false /* hidePulsing */,
-                true/* onlyShowCenteredIcon */);
+                false /* hidePulsing */);
     }
 
     public void updateAodNotificationIcons() {
@@ -394,9 +373,7 @@ public class NotificationIconAreaController implements
                 true /* hideDismissed */,
                 true /* hideRepliedMessages */,
                 true /* hideCurrentMedia */,
-                true /* hide centered icon */,
-                mBypassController.getBypassEnabled() /* hidePulsing */,
-                false /* onlyShowCenteredIcon */);
+                mBypassController.getBypassEnabled() /* hidePulsing */);
     }
 
     @VisibleForTesting
@@ -418,15 +395,14 @@ public class NotificationIconAreaController implements
     private void updateIconsForLayout(Function<NotificationEntry, StatusBarIconView> function,
             NotificationIconContainer hostLayout, boolean showAmbient, boolean showLowPriority,
             boolean hideDismissed, boolean hideRepliedMessages, boolean hideCurrentMedia,
-            boolean hideCenteredIcon, boolean hidePulsing, boolean onlyShowCenteredIcon) {
+            boolean hidePulsing) {
         ArrayList<StatusBarIconView> toShow = new ArrayList<>(mNotificationEntries.size());
         // Filter out ambient notifications and notification children.
         for (int i = 0; i < mNotificationEntries.size(); i++) {
             NotificationEntry entry = mNotificationEntries.get(i).getRepresentativeEntry();
             if (entry != null && entry.getRow() != null) {
                 if (shouldShowNotificationIcon(entry, showAmbient, showLowPriority, hideDismissed,
-                        hideRepliedMessages, hideCurrentMedia, hideCenteredIcon, hidePulsing,
-                        onlyShowCenteredIcon)) {
+                        hideRepliedMessages, hideCurrentMedia, hidePulsing)) {
                     StatusBarIconView iconView = function.apply(entry);
                     if (iconView != null) {
                         toShow.add(iconView);
@@ -500,6 +476,8 @@ public class NotificationIconAreaController implements
                 }
                 hostLayout.addView(v, i, params);
             }
+            v.setIconStyle(mNewIconStyle);
+            v.updateDrawable();
         }
 
         hostLayout.setChangingViewPositions(true);
@@ -516,11 +494,11 @@ public class NotificationIconAreaController implements
         }
         hostLayout.setChangingViewPositions(false);
         hostLayout.setReplacingIcons(null);
+        hostLayout.updateState();
     }
 
     /**
      * Applies {@link #mIconTint} to the notification icons.
-     * Applies {@link #mCenteredIconTint} to the center notification icon.
      */
     private void applyNotificationIconsTint() {
         for (int i = 0; i < mNotificationIcons.getChildCount(); i++) {
@@ -532,15 +510,6 @@ public class NotificationIconAreaController implements
             }
         }
 
-        for (int i = 0; i < mCenteredIcon.getChildCount(); i++) {
-            final StatusBarIconView iv = (StatusBarIconView) mCenteredIcon.getChildAt(i);
-            if (iv.getWidth() != 0) {
-                updateTintForIcon(iv, mCenteredIconTint);
-            } else {
-                iv.executeOnLayout(() -> updateTintForIcon(iv, mCenteredIconTint));
-            }
-        }
-
         updateAodIconColors();
     }
 
@@ -549,20 +518,14 @@ public class NotificationIconAreaController implements
         int color = StatusBarIconView.NO_COLOR;
         boolean colorize = !isPreL || NotificationUtils.isGrayscale(v, mContrastColorUtil);
         if (colorize) {
-            color = DarkIconDispatcher.getTint(mTintArea, v, tint);
+            color = DarkIconDispatcher.getTint(mTintAreas, v, tint);
         }
-        v.setStaticDrawableColor(color);
-        v.setDecorColor(tint);
-    }
-
-    /**
-     * Shows the icon view given in the center.
-     */
-    public void showIconCentered(NotificationEntry entry) {
-        StatusBarIconView icon = entry == null ? null : entry.getIcons().getCenteredIcon();
-        if (!Objects.equals(mCenteredIconView, icon)) {
-            mCenteredIconView = icon;
-            updateNotificationIcons();
+        if (v.getStatusBarIcon().pkg.contains("systemui") || !mNewIconStyle) {
+            v.setStaticDrawableColor(color);
+            v.setDecorColor(tint);
+        } else {
+            v.setStaticDrawableColor(StatusBarIconView.NO_COLOR);
+            v.setDecorColor(Color.WHITE);
         }
     }
 
@@ -600,7 +563,6 @@ public class NotificationIconAreaController implements
         if (mAodIcons != null) {
             mAodIcons.setAnimationsEnabled(mAnimationsEnabled && !inShade);
         }
-        mCenteredIcon.setAnimationsEnabled(mAnimationsEnabled && inShade);
         mNotificationIcons.setAnimationsEnabled(mAnimationsEnabled && inShade);
     }
 
@@ -617,7 +579,7 @@ public class NotificationIconAreaController implements
         if (mAodIcons == null) {
             return;
         }
-        if (mDozeParameters.shouldControlScreenOff()) {
+        if (mScreenOffAnimationController.shouldAnimateAodIcons()) {
             mAodIcons.setTranslationY(-mAodIconAppearTranslation);
             mAodIcons.setAlpha(0);
             animateInAodIconTranslation();
@@ -689,7 +651,7 @@ public class NotificationIconAreaController implements
         // playing, in which case we want them to be visible since we're animating in the AOD UI and
         // will be switching to KEYGUARD shortly.
         if (mStatusBarStateController.getState() != StatusBarState.KEYGUARD
-                && !mUnlockedScreenOffAnimationController.isScreenOffAnimationPlaying()) {
+                && !mScreenOffAnimationController.shouldShowAodIconsWhenShade()) {
             visible = false;
         }
         if (visible && mWakeUpCoordinator.isPulseExpanding()

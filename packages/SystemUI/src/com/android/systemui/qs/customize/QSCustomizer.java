@@ -31,6 +31,7 @@ import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.Toolbar;
 
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -38,8 +39,8 @@ import com.android.systemui.R;
 import com.android.systemui.plugins.qs.QS;
 import com.android.systemui.plugins.qs.QSContainerController;
 import com.android.systemui.qs.QSDetailClipper;
+import com.android.systemui.qs.QSUtils;
 import com.android.systemui.statusbar.phone.LightBarController;
-import com.android.systemui.util.Utils;
 
 /**
  * Allows full-screen customization of QS, through show() and hide().
@@ -96,8 +97,9 @@ public class QSCustomizer extends LinearLayout {
 
     void updateResources() {
         LayoutParams lp = (LayoutParams) mTransparentView.getLayoutParams();
-        lp.height = Utils.getQsHeaderSystemIconsAreaHeight(mContext);
+        lp.height = QSUtils.getQsHeaderSystemIconsAreaHeight(mContext);
         mTransparentView.setLayoutParams(lp);
+        mRecyclerView.getAdapter().notifyItemChanged(0);
     }
 
     void updateNavBackDrop(Configuration newConfig, LightBarController lightBarController) {
@@ -114,7 +116,7 @@ public class QSCustomizer extends LinearLayout {
         mQsContainerController = controller;
     }
 
-    public void setQs(QS qs) {
+    public void setQs(@Nullable QS qs) {
         mQs = qs;
     }
 
@@ -123,6 +125,7 @@ public class QSCustomizer extends LinearLayout {
      */
     void show(int x, int y, TileAdapter tileAdapter) {
         if (!isShown) {
+            mRecyclerView.getLayoutManager().scrollToPosition(0);
             int[] containerLocation = findViewById(R.id.customize_container).getLocationOnScreen();
             mX = x - containerLocation[0];
             mY = y - containerLocation[1];
@@ -138,6 +141,7 @@ public class QSCustomizer extends LinearLayout {
 
     void showImmediately() {
         if (!isShown) {
+            mRecyclerView.getLayoutManager().scrollToPosition(0);
             setVisibility(VISIBLE);
             mClipper.cancelAnimator();
             mClipper.showBackground();

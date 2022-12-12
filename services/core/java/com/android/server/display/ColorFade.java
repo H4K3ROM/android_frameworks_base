@@ -62,7 +62,7 @@ import java.nio.FloatBuffer;
  * that belongs to the {@link DisplayPowerController}.
  * </p>
  */
-final class ColorFade {
+final class ColorFade implements ScreenStateAnimator {
     private static final String TAG = "ColorFade";
 
     private static final boolean DEBUG = false;
@@ -156,9 +156,15 @@ final class ColorFade {
 
         mMode = mode;
 
+        DisplayInfo displayInfo = mDisplayManagerInternal.getDisplayInfo(mDisplayId);
+        if (displayInfo == null) {
+            // displayInfo can be null if the associated display has been removed. There
+            // is a delay between the display being removed and ColorFade being dismissed.
+            return false;
+        }
+
         // Get the display size and layer stack.
         // This is not expected to change while the color fade surface is showing.
-        DisplayInfo displayInfo = mDisplayManagerInternal.getDisplayInfo(mDisplayId);
         mDisplayLayerStack = displayInfo.layerStack;
         mDisplayWidth = displayInfo.getNaturalWidth();
         mDisplayHeight = displayInfo.getNaturalHeight();
@@ -662,8 +668,8 @@ final class ColorFade {
                     EGL14.EGL_NONE
             };
             if (isProtected) {
-                eglContextAttribList[2] = EGL_PROTECTED_CONTENT_EXT;
-                eglContextAttribList[3] = EGL14.EGL_TRUE;
+                eglContextAttribList[3] = EGL_PROTECTED_CONTENT_EXT;
+                eglContextAttribList[4] = EGL14.EGL_TRUE;
             }
             mEglContext = EGL14.eglCreateContext(mEglDisplay, mEglConfig, EGL14.EGL_NO_CONTEXT,
                     eglContextAttribList, 0);

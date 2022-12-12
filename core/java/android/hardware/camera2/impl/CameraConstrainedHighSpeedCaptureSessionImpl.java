@@ -26,13 +26,17 @@ import android.hardware.camera2.CameraOfflineSession.CameraOfflineSessionCallbac
 import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.params.OutputConfiguration;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.hardware.camera2.params.HighSpeedVideoConfiguration;
 import android.hardware.camera2.utils.SurfaceUtils;
 import android.os.Handler;
 import android.os.ConditionVariable;
 import android.util.Range;
+import android.util.Log;
+import android.util.Size;
 import android.view.Surface;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -56,6 +60,7 @@ public class CameraConstrainedHighSpeedCaptureSessionImpl
     private final CameraCharacteristics mCharacteristics;
     private final CameraCaptureSessionImpl mSessionImpl;
     private final ConditionVariable mInitialized = new ConditionVariable();
+    private final String TAG = "CameraConstrainedHighSpeedCaptureSessionImpl";
 
     /**
      * Create a new CameraCaptureSession.
@@ -95,10 +100,33 @@ public class CameraConstrainedHighSpeedCaptureSessionImpl
         StreamConfigurationMap config = mCharacteristics.get(ck);
         SurfaceUtils.checkConstrainedHighSpeedSurfaces(outputSurfaces, fpsRange, config);
 
-        // Request list size: to limit the preview to 30fps, need use maxFps/30; to maximize
-        // the preview frame rate, should use maxBatch size for that high speed stream
-        // configuration. We choose the former for now.
-        int requestListSize = fpsRange.getUpper() / 30;
+        // Check the high speed video fps ranges for video size and find the min value from the list
+        // and assign it to previewFps which will be used to calculate the requestList size.
+        Range<Integer>[] highSpeedFpsRanges = config.getHighSpeedVideoFpsRangesFor(
+                SurfaceUtils.getSurfaceSize(outputSurfaces.iterator().next()));
+        Log.v(TAG, "High speed fps ranges: " + Arrays.toString(highSpeedFpsRanges));
+        int previewFps = Integer.MAX_VALUE;
+        for (Range<Integer> range : highSpeedFpsRanges) {
+            int rangeMin = range.getLower();
+            if (previewFps > rangeMin) {
+                previewFps = rangeMin;
+            }
+        }
+        // Since we only want to support 60fps apart from 30fps, if the min value is not 60,
+        // then continue to calculate the requestList size using value 30.
+        if (previewFps != 60 && previewFps != 30) {
+            Log.w(TAG, "previewFps is neither 60 nor 30.");
+            previewFps = 30;
+        }
+        Log.v(TAG, "previewFps: " + previewFps);
+
+        int requestListSize = getHighSpeedRequestListSize(fpsRange, outputSurfaces);
+        // If it's a preview, keep requestList size fixed = 1.
+        if (fpsRange.getUpper() > fpsRange.getLower()) {
+            requestListSize = 1;
+        }
+
+        Log.v(TAG, "Request list size is: " + requestListSize);
         List<CaptureRequest> requestList = new ArrayList<CaptureRequest>();
 
         // Prepare the Request builders: need carry over the request controls.
@@ -175,6 +203,34 @@ public class CameraConstrainedHighSpeedCaptureSessionImpl
             }
         }
         return true;
+    }
+
+    private int getHighSpeedRequestListSize(Range<Integer> fpsRange, Collection<Surface> surfaces) {
+        int requestListSize = 0;
+
+        for (Surface surface : surfaces) {
+
+            if (SurfaceUtils.isSurfaceForHwVideoEncoder(surface)) {
+                Size surfaceSize = SurfaceUtils.getSurfaceSize(surface);
+                HighSpeedVideoConfiguration[] highSpeedVideoConfigurations =
+                    mCharacteristics.get(CameraCharacteristics.CONTROL_AVAILABLE_HIGH_SPEED_VIDEO_CONFIGURATIONS);
+
+                // Get the batchsize for matching FPS & video size
+                for (HighSpeedVideoConfiguration config : highSpeedVideoConfigurations) {
+                    if (config.getSize().equals(surfaceSize) && config.getFpsRange().equals(fpsRange)) {
+                        requestListSize = config.getBatchSizeMax();
+                        break;
+                     }
+                }
+                break;
+            }
+        }
+
+        if (requestListSize == 0) {
+            // If cant' find the matching batch size,  limit the preview to 30fps.
+            requestListSize = fpsRange.getUpper() / 30;
+        }
+        return requestListSize;
     }
 
     @Override

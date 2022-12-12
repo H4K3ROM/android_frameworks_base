@@ -25,6 +25,7 @@ import android.content.res.AssetFileDescriptor;
 import android.content.res.Resources.NotFoundException;
 import android.database.Cursor;
 import android.media.audiofx.HapticGenerator;
+import android.media.AudioDeviceInfo;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Build;
@@ -84,15 +85,25 @@ public class Ringtone {
     private Uri mUri;
     private String mTitle;
 
+    private AudioAttributes mFinalAudioAttributes;
+
     private AudioAttributes mAudioAttributes = new AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build();
+
+    private AudioAttributes mAudioAttributesHeadset = new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build();
+
     // playback properties, use synchronized with mPlaybackSettingsLock
     private boolean mIsLooping = false;
     private float mVolume = 1.0f;
     private boolean mHapticGeneratorEnabled = false;
     private final Object mPlaybackSettingsLock = new Object();
+
+    private final boolean mDeviceRingtoneFocus;
 
     /** {@hide} */
     @UnsupportedAppUsage
@@ -102,6 +113,8 @@ public class Ringtone {
         mAllowRemote = allowRemote;
         mRemotePlayer = allowRemote ? mAudioManager.getRingtonePlayer() : null;
         mRemoteToken = allowRemote ? new Binder() : null;
+        mDeviceRingtoneFocus = mContext.getResources().getBoolean(
+            com.android.internal.R.bool.config_deviceRingtoneFocusMode);
     }
 
     /**
@@ -335,6 +348,39 @@ public class Ringtone {
         return title;
     }
 
+    public void setCustomAudioAttributes() {
+        int focusmode = getRingtoneFocusMode();
+        boolean isHeadsetConnected = false;
+        AudioDeviceInfo[] connectedDevices = mAudioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+        for (AudioDeviceInfo device : connectedDevices) {
+            if (device.getType() == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    device.getType() == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                    device.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+                isHeadsetConnected = true;
+                break;
+            }
+        }
+        switch (focusmode) {
+            case 0: //play ringtone only from headset if music playing, otherwise from speakerphone
+                if (isHeadsetConnected && mAudioManager.isMusicActive()) {
+                    mFinalAudioAttributes = mAudioAttributesHeadset;
+                } else {
+                    mFinalAudioAttributes = mAudioAttributes;
+                }
+                break;
+            default:
+            case 1: //aosp behavior, ringtone always from both headset and speakerphone
+                    mFinalAudioAttributes = mAudioAttributes;
+                break;
+        }
+    }
+
+    private int getRingtoneFocusMode() {
+        int mode = Settings.Global.getInt(mContext.getContentResolver(),
+                Settings.Global.RINGTONE_FOCUS_MODE_V2, 1);
+        return mode;
+    }
+
     /**
      * Set {@link Uri} to be used for ringtone playback. Attempts to open
      * locally, otherwise will delegate playback to remote
@@ -369,7 +415,12 @@ public class Ringtone {
         mLocalPlayer = new MediaPlayer();
         try {
             mLocalPlayer.setDataSource(mContext, mUri);
-            mLocalPlayer.setAudioAttributes(mAudioAttributes);
+            if (mDeviceRingtoneFocus) {
+                setCustomAudioAttributes();
+                mLocalPlayer.setAudioAttributes(mFinalAudioAttributes);
+            } else {
+                mLocalPlayer.setAudioAttributes(mAudioAttributes);
+            }
             synchronized (mPlaybackSettingsLock) {
                 applyPlaybackProperties_sync();
             }
@@ -504,49 +555,51 @@ public class Ringtone {
     }
 
     private boolean playFallbackRingtone() {
-        if (mAudioManager.getStreamVolume(AudioAttributes.toLegacyStreamType(mAudioAttributes))
-                != 0) {
-            int ringtoneType = RingtoneManager.getDefaultType(mUri);
-            if (ringtoneType == -1 ||
-                    RingtoneManager.getActualDefaultRingtoneUri(mContext, ringtoneType) != null) {
-                // Default ringtone, try fallback ringtone.
-                try {
-                    AssetFileDescriptor afd = mContext.getResources().openRawResourceFd(
-                            com.android.internal.R.raw.fallbackring);
-                    if (afd != null) {
-                        mLocalPlayer = new MediaPlayer();
-                        if (afd.getDeclaredLength() < 0) {
-                            mLocalPlayer.setDataSource(afd.getFileDescriptor());
-                        } else {
-                            mLocalPlayer.setDataSource(afd.getFileDescriptor(),
-                                    afd.getStartOffset(),
-                                    afd.getDeclaredLength());
-                        }
-                        mLocalPlayer.setAudioAttributes(mAudioAttributes);
-                        synchronized (mPlaybackSettingsLock) {
-                            applyPlaybackProperties_sync();
-                        }
-                        if (mVolumeShaperConfig != null) {
-                            mVolumeShaper = mLocalPlayer.createVolumeShaper(mVolumeShaperConfig);
-                        }
-                        mLocalPlayer.prepare();
-                        startLocalPlayer();
-                        afd.close();
-                        return true;
-                    } else {
-                        Log.e(TAG, "Could not load fallback ringtone");
-                    }
-                } catch (IOException ioe) {
-                    destroyLocalPlayer();
-                    Log.e(TAG, "Failed to open fallback ringtone");
-                } catch (NotFoundException nfe) {
-                    Log.e(TAG, "Fallback ringtone does not exist");
-                }
-            } else {
-                Log.w(TAG, "not playing fallback for " + mUri);
-            }
+        int streamType = AudioAttributes.toLegacyStreamType(mAudioAttributes);
+        if (mAudioManager.getStreamVolume(streamType) == 0) {
+            return false;
         }
-        return false;
+        int ringtoneType = RingtoneManager.getDefaultType(mUri);
+        if (ringtoneType != -1 &&
+                RingtoneManager.getActualDefaultRingtoneUri(mContext, ringtoneType) == null) {
+            Log.w(TAG, "not playing fallback for " + mUri);
+            return false;
+        }
+        // Default ringtone, try fallback ringtone.
+        try {
+            AssetFileDescriptor afd = mContext.getResources().openRawResourceFd(
+                    com.android.internal.R.raw.fallbackring);
+            if (afd == null) {
+                Log.e(TAG, "Could not load fallback ringtone");
+                return false;
+            }
+            mLocalPlayer = new MediaPlayer();
+            if (afd.getDeclaredLength() < 0) {
+                mLocalPlayer.setDataSource(afd.getFileDescriptor());
+            } else {
+                mLocalPlayer.setDataSource(afd.getFileDescriptor(),
+                        afd.getStartOffset(),
+                        afd.getDeclaredLength());
+            }
+            mLocalPlayer.setAudioAttributes(mAudioAttributes);
+            synchronized (mPlaybackSettingsLock) {
+                applyPlaybackProperties_sync();
+            }
+            if (mVolumeShaperConfig != null) {
+                mVolumeShaper = mLocalPlayer.createVolumeShaper(mVolumeShaperConfig);
+            }
+            mLocalPlayer.prepare();
+            startLocalPlayer();
+            afd.close();
+        } catch (IOException ioe) {
+            destroyLocalPlayer();
+            Log.e(TAG, "Failed to open fallback ringtone");
+            return false;
+        } catch (NotFoundException nfe) {
+            Log.e(TAG, "Fallback ringtone does not exist");
+            return false;
+        }
+        return true;
     }
 
     void setTitle(String title) {

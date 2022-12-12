@@ -103,6 +103,7 @@ public class MtpDatabase implements AutoCloseable {
     private int mDeviceType;
     private String mHostType;
     private boolean mSkipThumbForHost = false;
+    private volatile boolean mHostIsWindows = false;
 
     private MtpServer mServer;
     private MtpStorageManager mManager;
@@ -274,10 +275,12 @@ public class MtpDatabase implements AutoCloseable {
                 int newLevel = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0);
                 if (newLevel != mBatteryLevel) {
                     mBatteryLevel = newLevel;
-                    if (mServer != null) {
-                        // send device property changed event
-                        mServer.sendDevicePropertyChanged(
-                                MtpConstants.DEVICE_PROPERTY_BATTERY_LEVEL);
+                    synchronized(MtpDatabase.this){
+                        if (mServer != null) {
+                            // send device property changed event
+                            mServer.sendDevicePropertyChanged(
+                                    MtpConstants.DEVICE_PROPERTY_BATTERY_LEVEL);
+                        }
                     }
                 }
             }
@@ -314,7 +317,7 @@ public class MtpDatabase implements AutoCloseable {
         mCloseGuard.open("close");
     }
 
-    public void setServer(MtpServer server) {
+    public synchronized void setServer(MtpServer server) {
         mServer = server;
         // always unregister before registering
         try {
@@ -358,7 +361,7 @@ public class MtpDatabase implements AutoCloseable {
     }
 
     public void addStorage(StorageVolume storage) {
-        MtpStorage mtpStorage = mManager.addMtpStorage(storage);
+        MtpStorage mtpStorage = mManager.addMtpStorage(storage, () -> mHostIsWindows);
         mStorageMap.put(storage.getPath(), mtpStorage);
         if (mServer != null) {
             mServer.addStorage(mtpStorage);
@@ -413,6 +416,7 @@ public class MtpDatabase implements AutoCloseable {
         }
         mHostType = "";
         mSkipThumbForHost = false;
+        mHostIsWindows = false;
     }
 
     @VisibleForNative
@@ -736,10 +740,12 @@ public class MtpDatabase implements AutoCloseable {
                         : MtpConstants.RESPONSE_GENERAL_ERROR);
             case MtpConstants.DEVICE_PROPERTY_SESSION_INITIATOR_VERSION_INFO:
                 mHostType = stringValue;
+                Log.d(TAG, "setDeviceProperty." + Integer.toHexString(property)
+                        + "=" + stringValue);
                 if (stringValue.startsWith("Android/")) {
-                    Log.d(TAG, "setDeviceProperty." + Integer.toHexString(property)
-                            + "=" + stringValue);
                     mSkipThumbForHost = true;
+                } else if (stringValue.startsWith("Windows/")) {
+                    mHostIsWindows = true;
                 }
                 return MtpConstants.RESPONSE_OK;
         }

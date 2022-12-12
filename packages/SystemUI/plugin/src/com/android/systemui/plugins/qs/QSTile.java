@@ -35,14 +35,12 @@ import java.util.function.Supplier;
 
 @ProvidesInterface(version = QSTile.VERSION)
 @DependsOn(target = QSIconView.class)
-@DependsOn(target = DetailAdapter.class)
 @DependsOn(target = Callback.class)
 @DependsOn(target = Icon.class)
 @DependsOn(target = State.class)
 public interface QSTile {
-    int VERSION = 1;
+    int VERSION = 4;
 
-    DetailAdapter getDetailAdapter();
     String getTileSpec();
 
     boolean isAvailable();
@@ -79,6 +77,12 @@ public interface QSTile {
     void longClick(@Nullable View view);
 
     void userSwitch(int currentUser);
+
+    /**
+     * @deprecated not needed as {@link com.android.internal.logging.UiEvent} will use
+     * {@link #getMetricsSpec}
+     */
+    @Deprecated
     int getMetricsCategory();
 
     void setListening(Object client, boolean listening);
@@ -110,14 +114,16 @@ public interface QSTile {
         return false;
     }
 
+    /**
+     * Return whether the tile is set to its listening state and therefore receiving updates and
+     * refreshes from controllers
+     */
+    boolean isListening();
+
     @ProvidesInterface(version = Callback.VERSION)
-    public interface Callback {
-        public static final int VERSION = 1;
+    interface Callback {
+        static final int VERSION = 2;
         void onStateChanged(State state);
-        void onShowDetail(boolean show);
-        void onToggleStateChanged(boolean state);
-        void onScanStateChanged(boolean state);
-        void onAnnouncementRequested(CharSequence announcement);
     }
 
     @ProvidesInterface(version = Icon.VERSION)
@@ -154,9 +160,9 @@ public interface QSTile {
         public Supplier<Icon> iconSupplier;
         public int state = DEFAULT_STATE;
         public CharSequence label;
-        public CharSequence secondaryLabel;
+        @Nullable public CharSequence secondaryLabel;
         public CharSequence contentDescription;
-        public CharSequence stateDescription;
+        @Nullable public CharSequence stateDescription;
         public CharSequence dualLabelContentDescription;
         public boolean disabledByPolicy;
         public boolean dualTarget = false;
@@ -165,6 +171,7 @@ public interface QSTile {
         public SlashState slash;
         public boolean handlesLongClick = true;
         public boolean showRippleEffect = true;
+        @Nullable
         public Drawable sideViewCustomDrawable;
         public String spec;
 
@@ -342,6 +349,33 @@ public interface QSTile {
             SlashState state = new SlashState();
             state.rotation = rotation;
             state.isSlashed = isSlashed;
+            return state;
+        }
+    }
+
+    @ProvidesInterface(version = LiveDisplayState.VERSION)
+    public static class LiveDisplayState extends State {
+        public static final int VERSION = 1;
+        public int mode;
+
+        @Override
+        public boolean copyTo(State other) {
+            final LiveDisplayState o = (LiveDisplayState) other;
+            final boolean changed = mode != o.mode;
+            return super.copyTo(other) || changed;
+        }
+
+        @Override
+        protected StringBuilder toStringBuilder() {
+            final StringBuilder rt = super.toStringBuilder();
+            rt.insert(rt.length() - 1, ",mode=" + mode);
+            return rt;
+        }
+
+        @Override
+        public State copy() {
+            LiveDisplayState state = new LiveDisplayState();
+            copyTo(state);
             return state;
         }
     }

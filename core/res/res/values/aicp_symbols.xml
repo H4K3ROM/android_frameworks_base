@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2012-2022 AICP
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+
+    <!-- Device keyhandlers -->
+    <java-symbol type="array" name="config_deviceKeyHandlerLibs" />
+    <java-symbol type="array" name="config_deviceKeyHandlerClasses" />
+
+    <!-- Whether device has physical tri state switch -->
+    <java-symbol type="bool" name="config_hasAlertSlider" />
+
+    <!-- The location of the devices physical tri state switch -->
+    <java-symbol type="integer" name="config_alertSliderLocation" />
+
+    <!-- Whether key handler sends intent when changing slider position -->
+    <java-symbol type="string" name="config_alertSliderIntent" />
+
+    <!-- LiveDisplay -->
+    <java-symbol type="bool" name="config_liveDisplayAvailable" />
+    <java-symbol type="string" name="live_display_title" />
+    <java-symbol type="string" name="live_display_hint" />
+    <java-symbol type="string" name="live_display_auto" />
+    <java-symbol type="string" name="live_display_auto_summary" />
+    <java-symbol type="string" name="live_display_day" />
+    <java-symbol type="string" name="live_display_day_summary" />
+    <java-symbol type="string" name="live_display_night" />
+    <java-symbol type="string" name="live_display_night_summary" />
+    <java-symbol type="string" name="live_display_outdoor" />
+    <java-symbol type="string" name="live_display_outdoor_summary" />
+    <java-symbol type="drawable" name="ic_livedisplay_notif" />
+    <java-symbol type="array" name="live_display_announcement" />
+    <java-symbol type="array" name="live_display_description" />
+    <java-symbol type="array" name="live_display_drawables" />
+    <java-symbol type="array" name="live_display_entries" />
+    <java-symbol type="array" name="live_display_summaries" />
+    <java-symbol type="array" name="live_display_values" />
+    <java-symbol type="integer" name="config_dayColorTemperature" />
+    <java-symbol type="integer" name="config_nightColorTemperature" />
+    <java-symbol type="integer" name="config_outdoorAmbientLux" />
+    <java-symbol type="integer" name="config_outdoorAmbientLuxHysteresis" />
+    <java-symbol type="integer" name="config_defaultLiveDisplayMode" />
+    <java-symbol type="integer" name="config_minColorTemperature" />
+    <java-symbol type="integer" name="config_maxColorTemperature" />
+    <java-symbol type="bool" name="config_enableLiveDisplay" />
+    <java-symbol type="bool" name="config_defaultAutoContrast" />
+    <java-symbol type="bool" name="config_defaultAutoOutdoorMode" />
+    <java-symbol type="bool" name="config_defaultColorEnhancement" />
+    <java-symbol type="bool" name="config_defaultCABC" />
+    <java-symbol type="bool" name="config_filterDisplayModes" />
+    <java-symbol type="array" name="config_displayModeMappings" />
+    <java-symbol type="bool" name="config_defaultAntiFlicker" />
+
+    <!-- Whether device supports displaying volume panel on the left side-->
+    <java-symbol type="bool" name="config_audioPanelOnLeftSide" />
+
+    <!-- Whether to cleanup fingerprints upon connection to the daemon and when user switches -->
+    <java-symbol type="bool" name="config_cleanupUnusedFingerprints" />
+
+    <!-- Whether to cancel fingerprint operation if not idle -->
+    <java-symbol type="bool" name="config_fpCancelIfNotIdle" />
+
+    <!-- Whether to force enable multi resolution configuration for camera -->
+    <java-symbol type="bool" name="config_forceMultiResolution" />
+
+    <!-- Path to fast charging status file to detect whether an oem fast charger is active -->
+    <java-symbol type="array" name="config_oemFastChargerStatusPaths" />
+
+    <!-- Paths to OP warp charging status file -->
+    <java-symbol type="string" name="config_opWarpChargerStatusPaths" />
+
+    <!-- Path to warp charging status file -->
+    <java-symbol type="string" name="config_DashChargerStatusPath" />
+
+    <!-- Light / Regular style fonts -->
+    <java-symbol type="string" name="config_lightFontFamily" />
+    <java-symbol type="string" name="config_regularFontFamily" />
+
+    <!-- App error dialog -->
+    <java-symbol type="id" name="aerr_copy" />
+    <java-symbol type="string" name="url_copy_success" />
+    <java-symbol type="string" name="url_copy_failed" />
+
+    <!-- Toast Animation -->
+    <java-symbol type="style" name="Animation.Toast.Fade" />
+    <java-symbol type="style" name="Animation.Toast.SlideRight" />
+    <java-symbol type="style" name="Animation.Toast.SlideLeft" />
+    <java-symbol type="style" name="Animation.Toast.Xylon" />
+    <java-symbol type="style" name="Animation.Toast.Toko" />
+    <java-symbol type="style" name="Animation.Toast.Tn" />
+    <java-symbol type="style" name="Animation.Toast.Honami" />
+    <java-symbol type="style" name="Animation.Toast.FastFade" />
+    <java-symbol type="style" name="Animation.Toast.GrowFade" />
+    <java-symbol type="style" name="Animation.Toast.GrowFadeCenter" />
+    <java-symbol type="style" name="Animation.Toast.GrowFadeBottom" />
+    <java-symbol type="style" name="Animation.Toast.Translucent" />
+    <java-symbol type="style" name="Animation.Toast.SlideRightLeft" />
+    <java-symbol type="style" name="Animation.Toast.SlideLeftRight" />
+
+    <!-- Advanced reboot -->
+    <java-symbol type="string" name="reboot_to_recovery_title" />
+    <java-symbol type="string" name="reboot_to_recovery_message" />
+    <java-symbol type="string" name="reboot_to_bootloader_title" />
+    <java-symbol type="string" name="reboot_to_bootloader_message" />
+    <java-symbol type="string" name="reboot_title" />
+    <java-symbol type="string" name="reboot_message" />
+
+    <!-- Global Actions pref list -->
+    <java-symbol type="array" name="custom_config_globalActionsList" />
+
+    <!-- Full screen aspect ratio -->
+    <java-symbol type="bool" name="config_haveHigherAspectRatioScreen" />
+    <java-symbol type="dimen" name="config_screenAspectRatio" />
+
+    <!-- Whether prop imitation is enabled -->
+    <java-symbol type="bool" name="config_enablePropImitation" />
+
+    <!-- Fingerprint from a certified device against current platform SPL level -->
+    <java-symbol type="string" name="config_certifiedFingerprint" />
+
+    <!-- Fingerprint from a certified model -->
+    <java-symbol type="string" name="config_certifiedModel" />
+
+    <!-- Fingerprint from stock ROM -->
+    <java-symbol type="string" name="config_stockFingerprint" />
+
+    <!-- Pocket Lock -->
+    <java-symbol type="layout" name="pocket_lock_view" />
+
+    <!-- Pocket bridge -->
+    <java-symbol type="string" name="config_pocketBridgeSysfsInpocket" />
+    <java-symbol type="bool" name="config_pocketModeSupported" />
+    <java-symbol type="bool" name="config_pocketUseLightSensor" />
+
+    <!-- Pocket Service -->
+    <java-symbol type="string" name="config_pocketJudgeVendorSensorName" />
+    <java-symbol type="string" name="config_pocketJudgeVendorProximitySensorName" />
+
+    <!-- Wired/BT headset focus mode -->
+    <java-symbol type="bool" name="config_deviceRingtoneFocusMode" />
+
+    <!-- Cycle through ringer modes -->
+    <java-symbol type="string" name="volume_dialog_ringer_guidance_normal" />
+
+    <!-- Power menu animations -->
+    <java-symbol type="style" name="GlobalActionsAnimation" />
+    <java-symbol type="style" name="GlobalActionsAnimationTop" />
+    <java-symbol type="style" name="GlobalActionsAnimationEnter" />
+    <java-symbol type="style" name="GlobalActionsAnimationFly" />
+    <java-symbol type="style" name="GlobalActionsAnimationTn" />
+    <java-symbol type="style" name="GlobalActionsAnimationTranslucent" />
+    <java-symbol type="style" name="GlobalActionsAnimationXylon" />
+    <java-symbol type="style" name="GlobalActionsAnimationCard" />
+    <java-symbol type="style" name="GlobalActionsAnimationRotate" />
+
+    <!-- Whether to handle audio direction changes between major call states -->
+    <java-symbol type="bool" name="config_handleAudioDirectionChangesBetweenCallStateChanges" />
+
+    <!-- Screen off delay -->
+    <java-symbol type="integer" name="config_screen_off_delay" />
+
+    <!-- Whether the device supports Smart Pixels -->
+    <java-symbol type="bool" name="config_supportSmartPixels" />
+
+
+    <!-- Button and keyboard backlight -->
+    <java-symbol type="integer" name="config_deviceSupportsButtonBrightnessControl" />
+    <java-symbol type="integer" name="config_deviceSupportsKeyboardBrightnessControl" />
+    <java-symbol type="dimen" name="config_buttonBrightnessSettingDefaultFloat" />
+    <java-symbol type="dimen" name="config_keyboardBrightnessSettingDefaultFloat" />
+
+    <!-- Whether device can force navbar disabling -->
+    <java-symbol type="bool" name="config_canForceDisableNavigationBar" />
+
+    <!-- Whether device supports gestures on fingerprint sensor -->
+    <java-symbol type="bool" name="config_supportsGesturesOnFingerprintSensor" />
+
+    <!-- Device hardware keys -->
+    <java-symbol type="integer" name="config_deviceHardwareKeys" />
+    <java-symbol type="integer" name="config_deviceHardwareWakeKeys" />
+
+    <!-- Device keys user-customisable behavior -->
+    <java-symbol type="integer" name="config_longPressOnHomeBehavior" />
+    <java-symbol type="integer" name="config_doubleTapOnHomeBehavior" />
+    <java-symbol type="integer" name="config_longPressOnMenuBehavior" />
+    <java-symbol type="integer" name="config_longPressOnAppSwitchBehavior" />
+    <java-symbol type="integer" name="config_pressOnAppSwitchBehavior" />
+    <java-symbol type="integer" name="config_pressOnAssistBehavior" />
+    <java-symbol type="integer" name="config_longPressOnAssistBehavior" />
+
+    <!-- Camera key type -->
+    <java-symbol type="bool" name="config_singleStageCameraKey" />
+
+    <!-- Location indicator -->
+    <java-symbol type="drawable" name="stat_sys_location" />
+
+    <!-- Camera -->
+    <java-symbol type="array" name="config_cameraAuxPackageAllowList" />
+    <java-symbol type="array" name="config_cameraAuxPackageExcludeList" />
+
+    <!-- Proximity check on screen on -->
+    <java-symbol type="bool" name="config_proximityCheckOnWake" />
+
+    <!-- Proximity check timeout -->
+    <java-symbol type="integer" name="config_proximityCheckTimeout" />
+
+    <!-- Proximity check on screen on default -->
+    <java-symbol type="bool" name="config_proximityCheckOnWakeEnabledByDefault" />
+</resources>

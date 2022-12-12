@@ -43,6 +43,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.animation.Interpolator;
 import android.view.animation.PathInterpolator;
+import android.window.BackEvent;
 
 import androidx.core.graphics.ColorUtils;
 import androidx.dynamicanimation.animation.DynamicAnimation;
@@ -50,6 +51,7 @@ import androidx.dynamicanimation.animation.FloatPropertyCompat;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
 
+import com.android.internal.util.LatencyTracker;
 import com.android.settingslib.Utils;
 import com.android.systemui.Dependency;
 import com.android.systemui.R;
@@ -57,6 +59,7 @@ import com.android.systemui.animation.Interpolators;
 import com.android.systemui.plugins.NavigationEdgeBackPlugin;
 import com.android.systemui.shared.navigationbar.RegionSamplingHelper;
 import com.android.systemui.statusbar.VibratorHelper;
+import com.android.wm.shell.back.BackAnimation;
 
 import java.io.PrintWriter;
 import java.util.concurrent.Executor;
@@ -160,7 +163,8 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
     // The amount the arrow is shifted to avoid the finger.
     private int mFingerOffset;
 
-    private final float mSwipeThreshold;
+    private final float mSwipeTriggerThreshold;
+    private final float mSwipeProgressThreshold;
     private final Path mArrowPath = new Path();
     private final Point mDisplaySize = new Point();
 
@@ -173,6 +177,7 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
     private final ValueAnimator mArrowDisappearAnimation;
     private final SpringForce mRegularTranslationSpring;
     private final SpringForce mTriggerBackSpring;
+    private final LatencyTracker mLatencyTracker;
 
     private VelocityTracker mVelocityTracker;
     private boolean mIsDark = false;
@@ -202,6 +207,7 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
      * The current translation of the arrow
      */
     private float mCurrentTranslation;
+    private boolean mBackArrowVisibility;
     /**
      * Where the arrow will be in the resting position.
      */
@@ -210,9 +216,7 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
     private boolean mDragSlopPassed;
     private boolean mArrowsPointLeft;
     private float mMaxTranslation;
-    private float mLongSwipeThreshold;
     private boolean mTriggerBack;
-    private boolean mTriggerLongSwipe;
     private float mPreviousTouchTranslation;
     private float mTotalTouchDelta;
     private float mVerticalTranslation;
@@ -224,11 +228,10 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
     private float mDisappearAmount;
     private long mVibrationTime;
     private int mScreenSize;
+    private boolean mTrackingBackArrowLatency = false;
 
     private final Handler mHandler = new Handler();
     private final Runnable mFailsafeRunnable = this::onFailsafe;
-
-    private boolean mIsLongSwipeEnabled;
 
     private DynamicAnimation.OnAnimationEndListener mSetGoneEndListener
             = new DynamicAnimation.OnAnimationEndListener() {
@@ -281,11 +284,14 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
                 }
             };
     private BackCallback mBackCallback;
+    private BackAnimation mBackAnimation;
 
-    public NavigationBarEdgePanel(Context context) {
+    public NavigationBarEdgePanel(Context context,
+            BackAnimation backAnimation, LatencyTracker latencyTracker) {
         super(context);
 
         mWindowManager = context.getSystemService(WindowManager.class);
+        mBackAnimation = backAnimation;
         mVibratorHelper = Dependency.get(VibratorHelper.class);
 
         mDensity = context.getResources().getDisplayMetrics().density;
@@ -351,8 +357,12 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
         loadColors(context);
         updateArrowDirection();
 
-        mSwipeThreshold = context.getResources()
+        mSwipeTriggerThreshold = context.getResources()
                 .getDimension(R.dimen.navigation_edge_action_drag_threshold);
+        mSwipeProgressThreshold = context.getResources()
+                .getDimension(R.dimen.navigation_edge_action_progress_threshold);
+        initializeBackAnimation();
+
         setVisibility(GONE);
 
         Executor backgroundExecutor = Dependency.get(Dependency.BACKGROUND_EXECUTOR);
@@ -376,6 +386,18 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
                 }, backgroundExecutor);
         mRegionSamplingHelper.setWindowVisible(true);
         mShowProtection = !isPrimaryDisplay;
+        mLatencyTracker = latencyTracker;
+    }
+
+    public void setBackAnimation(BackAnimation backAnimation) {
+        mBackAnimation = backAnimation;
+        initializeBackAnimation();
+    }
+
+    private void initializeBackAnimation() {
+        if (mBackAnimation != null) {
+            mBackAnimation.setSwipeThresholds(mSwipeTriggerThreshold, mSwipeProgressThreshold);
+        }
     }
 
     @Override
@@ -428,11 +450,8 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
     }
 
     @Override
-    public void setLongSwipeEnabled(boolean enabled) {
-        mLongSwipeThreshold = enabled ? MathUtils.min(
-                mDisplaySize.x * 0.5f, mLayoutParams.width * 2.5f) : 0.0f;
-        mIsLongSwipeEnabled = mLongSwipeThreshold > 0;
-        setTriggerLongSwipe(mIsLongSwipeEnabled && mTriggerLongSwipe, false /* animated */);
+    public void setBackArrowVisibility(boolean backArrowVisibility) {
+        mBackArrowVisibility = backArrowVisibility;
     }
 
     /**
@@ -471,6 +490,12 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
 
     @Override
     public void onMotionEvent(MotionEvent event) {
+        if (mBackAnimation != null) {
+            mBackAnimation.onBackMotion(
+                    event.getX(), event.getY(),
+                    event.getActionMasked(),
+                    mIsLeftPanel ? BackEvent.EDGE_LEFT : BackEvent.EDGE_RIGHT);
+        }
         if (mVelocityTracker == null) {
             mVelocityTracker = VelocityTracker.obtain();
         }
@@ -481,10 +506,12 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
                 resetOnDown();
                 mStartX = event.getX();
                 mStartY = event.getY();
-                setVisibility(VISIBLE);
+                setVisibility(mBackArrowVisibility ? VISIBLE : INVISIBLE);
                 updatePosition(event.getY());
                 mRegionSamplingHelper.start(mSamplingRect);
                 mWindowManager.updateViewLayout(this, mLayoutParams);
+                mLatencyTracker.onActionStart(LatencyTracker.ACTION_SHOW_BACK_ARROW);
+                mTrackingBackArrowLatency = true;
                 break;
             case MotionEvent.ACTION_MOVE:
                 handleMoveEvent(event);
@@ -494,10 +521,8 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
                     Log.d(DEBUG_MISSING_GESTURE_TAG,
                             "NavigationBarEdgePanel ACTION_UP, mTriggerBack=" + mTriggerBack);
                 }
-                if (mTriggerLongSwipe) {
-                    triggerBack(true);
-                } else if (mTriggerBack) {
-                    triggerBack(false);
+                if (mTriggerBack) {
+                    triggerBack();
                 } else {
                     cancelBack();
                 }
@@ -536,17 +561,16 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
         float x = (polarToCartX(mCurrentAngle) * mArrowLength);
         float y = (polarToCartY(mCurrentAngle) * mArrowLength);
         Path arrowPath = calculatePath(x,y);
-        if (mTriggerLongSwipe) {
-            arrowPath.addPath(calculatePath(x,y),
-                    mArrowThickness * 2.0f * (mIsLeftPanel ? 1 : -1), 0.0f);
-        }
-
         if (mShowProtection) {
             canvas.drawPath(arrowPath, mProtectionPaint);
         }
 
         canvas.drawPath(arrowPath, mPaint);
         canvas.restore();
+        if (mTrackingBackArrowLatency) {
+            mLatencyTracker.onActionEnd(LatencyTracker.ACTION_SHOW_BACK_ARROW);
+            mTrackingBackArrowLatency = false;
+        }
     }
 
     @Override
@@ -635,8 +659,8 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
         return mCurrentTranslation;
     }
 
-    private void triggerBack(boolean triggerLongSwipe) {
-        mBackCallback.triggerBack(triggerLongSwipe);
+    private void triggerBack() {
+        mBackCallback.triggerBack();
 
         if (mVelocityTracker == null) {
             mVelocityTracker = VelocityTracker.obtain();
@@ -714,7 +738,6 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
             Log.d(DEBUG_MISSING_GESTURE_TAG, "reset mTriggerBack=false");
         }
         setTriggerBack(false /* triggerBack */, false /* animated */);
-        setTriggerLongSwipe(false /* triggerLongSwipe */, false /* animated */);
         setDesiredTranslation(0, false /* animated */);
         setCurrentTranslation(0);
         updateAngle(false /* animate */);
@@ -739,10 +762,9 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
             }
         }
         mPreviousTouchTranslation = touchTranslation;
-        boolean isLongSwipe = touchTranslation > mLongSwipeThreshold;
 
         // Apply a haptic on drag slop passed
-        if (!mDragSlopPassed && touchTranslation > mSwipeThreshold) {
+        if (!mDragSlopPassed && touchTranslation > mSwipeTriggerThreshold) {
             mDragSlopPassed = true;
             mVibratorHelper.vibrate(VibrationEffect.EFFECT_TICK);
             mVibrationTime = SystemClock.uptimeMillis();
@@ -802,12 +824,6 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
                     + ", x=" + x
                     + ", mStartX=" + mStartX);
         }
-
-        if (mIsLongSwipeEnabled) {
-            boolean triggerLongSwipe = triggerBack && isLongSwipe;
-            setTriggerLongSwipe(triggerLongSwipe, true /* animated */);
-        }
-
         setTriggerBack(triggerBack, true /* animated */);
 
         if (!mTriggerBack) {
@@ -893,18 +909,9 @@ public class NavigationBarEdgePanel extends View implements NavigationEdgeBackPl
             // Whenever the trigger back state changes the existing translation animation should be
             // cancelled
             mTranslationAnimation.cancel();
-        }
-    }
-
-    private void setTriggerLongSwipe(boolean triggerLongSwipe, boolean animated) {
-        if (mTriggerLongSwipe != triggerLongSwipe) {
-            mTriggerLongSwipe = triggerLongSwipe;
-            mVibratorHelper.vibrate(VibrationEffect.EFFECT_CLICK);
-            mAngleAnimation.cancel();
-            updateAngle(animated);
-            // Whenever the trigger back state changes the existing translation animation should be
-            // cancelled
-            mTranslationAnimation.cancel();
+            if (mBackAnimation != null) {
+                mBackAnimation.setTriggerBack(triggerBack);
+            }
         }
     }
 

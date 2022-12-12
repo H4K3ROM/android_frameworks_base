@@ -47,6 +47,7 @@ import android.os.SystemClock;
 import android.os.Temperature;
 import android.os.UserHandle;
 import android.provider.DeviceConfig;
+import android.provider.DeviceConfigInterface;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.IndentingPrintWriter;
@@ -69,7 +70,6 @@ import com.android.server.display.utils.AmbientFilterFactory;
 import com.android.server.sensors.SensorManagerInternal;
 import com.android.server.sensors.SensorManagerInternal.ProximityActiveListener;
 import com.android.server.statusbar.StatusBarManagerInternal;
-import com.android.server.utils.DeviceConfigInterface;
 
 import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
@@ -100,8 +100,6 @@ public class DisplayModeDirector {
     // Special ID used to indicate that given vote is to be applied globally, rather than to a
     // specific display.
     private static final int GLOBAL_ID = -1;
-
-    private static final int INVALID_DISPLAY_MODE_ID = -1;
 
     private static final float FLOAT_TOLERANCE = RefreshRateRange.FLOAT_TOLERANCE;
 
@@ -525,7 +523,10 @@ public class DisplayModeDirector {
      */
     public void setShouldAlwaysRespectAppRequestedMode(boolean enabled) {
         synchronized (mLock) {
-            mAlwaysRespectAppRequest = enabled;
+            if (mAlwaysRespectAppRequest != enabled) {
+                mAlwaysRespectAppRequest = enabled;
+                notifyDesiredDisplayModeSpecsChangedLocked();
+            }
         }
     }
 
@@ -1123,6 +1124,8 @@ public class DisplayModeDirector {
                 Settings.Global.getUriFor(Settings.Global.LOW_POWER_MODE);
         private final Uri mMatchContentFrameRateSetting =
                 Settings.Secure.getUriFor(Settings.Secure.MATCH_CONTENT_FRAME_RATE);
+        private final Uri mLowPowerRefreshRateSetting =
+                Settings.System.getUriFor(Settings.System.LOW_POWER_REFRESH_RATE);
 
         private final Context mContext;
         private float mDefaultPeakRefreshRate;
@@ -1146,6 +1149,8 @@ public class DisplayModeDirector {
                     UserHandle.USER_SYSTEM);
             cr.registerContentObserver(mMatchContentFrameRateSetting, false /*notifyDescendants*/,
                     this);
+            cr.registerContentObserver(mLowPowerRefreshRateSetting, false /*notifyDescendants*/, this,
+                    UserHandle.USER_SYSTEM);
 
             Float deviceConfigDefaultPeakRefresh =
                     mDeviceConfigDisplaySettings.getDefaultPeakRefreshRate();
@@ -1187,7 +1192,8 @@ public class DisplayModeDirector {
                 if (mPeakRefreshRateSetting.equals(uri)
                         || mMinRefreshRateSetting.equals(uri)) {
                     updateRefreshRateSettingLocked();
-                } else if (mLowPowerModeSetting.equals(uri)) {
+                } else if (mLowPowerModeSetting.equals(uri)
+                        || mLowPowerRefreshRateSetting.equals(uri)) {
                     updateLowPowerModeSettingLocked();
                 } else if (mMatchContentFrameRateSetting.equals(uri)) {
                     updateModeSwitchingTypeSettingLocked();
@@ -1196,11 +1202,14 @@ public class DisplayModeDirector {
         }
 
         private void updateLowPowerModeSettingLocked() {
-            boolean inLowPowerMode = Settings.Global.getInt(mContext.getContentResolver(),
+            final ContentResolver cr = mContext.getContentResolver();
+            boolean inLowPowerMode = Settings.Global.getInt(cr,
                     Settings.Global.LOW_POWER_MODE, 0 /*default*/) != 0;
             final Vote vote;
             if (inLowPowerMode) {
-                vote = Vote.forRefreshRates(0f, 60f);
+                float lowPowerRefreshRate = Settings.System.getFloatForUser(cr,
+                    Settings.System.LOW_POWER_REFRESH_RATE, 60f /*default*/, cr.getUserId());
+                vote = Vote.forRefreshRates(0f, lowPowerRefreshRate);
             } else {
                 vote = null;
             }
@@ -1211,7 +1220,7 @@ public class DisplayModeDirector {
         private void updateRefreshRateSettingLocked() {
             final ContentResolver cr = mContext.getContentResolver();
             float minRefreshRate = Settings.System.getFloatForUser(cr,
-                    Settings.System.MIN_REFRESH_RATE, 0f, cr.getUserId());
+                    Settings.System.MIN_REFRESH_RATE, mDefaultRefreshRate, cr.getUserId());
             float peakRefreshRate = Settings.System.getFloatForUser(cr,
                     Settings.System.PEAK_REFRESH_RATE, mDefaultPeakRefreshRate, cr.getUserId());
             updateRefreshRateSettingLocked(minRefreshRate, peakRefreshRate, mDefaultRefreshRate);
@@ -2097,48 +2106,37 @@ public class DisplayModeDirector {
 
     private class UdfpsObserver extends IUdfpsHbmListener.Stub {
         private final SparseBooleanArray mLocalHbmEnabled = new SparseBooleanArray();
-        private final SparseBooleanArray mGlobalHbmEnabled = new SparseBooleanArray();
 
         public void observe() {
             StatusBarManagerInternal statusBar =
                     LocalServices.getService(StatusBarManagerInternal.class);
-            statusBar.setUdfpsHbmListener(this);
-        }
-
-        @Override
-        public void onHbmEnabled(int hbmType, int displayId) {
-            synchronized (mLock) {
-                updateHbmStateLocked(hbmType, displayId, true /*enabled*/);
+            if (statusBar != null) {
+                statusBar.setUdfpsHbmListener(this);
             }
         }
 
         @Override
-        public void onHbmDisabled(int hbmType, int displayId) {
+        public void onHbmEnabled(int displayId) {
             synchronized (mLock) {
-                updateHbmStateLocked(hbmType, displayId, false /*enabled*/);
+                updateHbmStateLocked(displayId, true /*enabled*/);
             }
         }
 
-        private void updateHbmStateLocked(int hbmType, int displayId, boolean enabled) {
-            switch (hbmType) {
-                case UdfpsObserver.LOCAL_HBM:
-                    mLocalHbmEnabled.put(displayId, enabled);
-                    break;
-                case UdfpsObserver.GLOBAL_HBM:
-                    mGlobalHbmEnabled.put(displayId, enabled);
-                    break;
-                default:
-                    Slog.w(TAG, "Unknown HBM type reported. Ignoring.");
-                    return;
+        @Override
+        public void onHbmDisabled(int displayId) {
+            synchronized (mLock) {
+                updateHbmStateLocked(displayId, false /*enabled*/);
             }
+        }
+
+        private void updateHbmStateLocked(int displayId, boolean enabled) {
+            mLocalHbmEnabled.put(displayId, enabled);
             updateVoteLocked(displayId);
         }
 
         private void updateVoteLocked(int displayId) {
             final Vote vote;
-            if (mGlobalHbmEnabled.get(displayId)) {
-                vote = Vote.forRefreshRates(60f, 60f);
-            } else if (mLocalHbmEnabled.get(displayId)) {
+            if (mLocalHbmEnabled.get(displayId)) {
                 Display.Mode[] modes = mSupportedModesByDisplay.get(displayId);
                 float maxRefreshRate = 0f;
                 for (Display.Mode mode : modes) {
@@ -2162,13 +2160,6 @@ public class DisplayModeDirector {
                 final String enabled = mLocalHbmEnabled.valueAt(i) ? "enabled" : "disabled";
                 pw.println("      Display " + displayId + ": " + enabled);
             }
-            pw.println("    mGlobalHbmEnabled: ");
-            for (int i = 0; i < mGlobalHbmEnabled.size(); i++) {
-                final int displayId = mGlobalHbmEnabled.keyAt(i);
-                final String enabled = mGlobalHbmEnabled.valueAt(i) ? "enabled" : "disabled";
-                pw.println("      Display " + displayId + ": " + enabled);
-            }
-
         }
     }
 

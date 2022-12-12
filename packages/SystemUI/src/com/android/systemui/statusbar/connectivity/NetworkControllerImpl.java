@@ -33,7 +33,6 @@ import android.net.ConnectivityManager;
 import android.net.ConnectivityManager.NetworkCallback;
 import android.net.Network;
 import android.net.NetworkCapabilities;
-import android.net.NetworkScoreManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
@@ -63,6 +62,7 @@ import com.android.settingslib.mobile.MobileMappings.Config;
 import com.android.settingslib.mobile.MobileStatusTracker.SubscriptionDefaults;
 import com.android.settingslib.mobile.TelephonyIcons;
 import com.android.settingslib.net.DataUsageController;
+import com.android.systemui.Dependency;
 import com.android.systemui.Dumpable;
 import com.android.systemui.R;
 import com.android.systemui.broadcast.BroadcastDispatcher;
@@ -73,8 +73,8 @@ import com.android.systemui.demomode.DemoMode;
 import com.android.systemui.demomode.DemoModeController;
 import com.android.systemui.dump.DumpManager;
 import com.android.systemui.flags.FeatureFlags;
+import com.android.systemui.flags.Flags;
 import com.android.systemui.qs.tiles.dialog.InternetDialogFactory;
-import com.android.systemui.qs.tiles.dialog.InternetDialogUtil;
 import com.android.systemui.settings.CurrentUserTracker;
 import com.android.systemui.statusbar.policy.ConfigurationController;
 import com.android.systemui.statusbar.policy.DataSaverController;
@@ -83,9 +83,9 @@ import com.android.systemui.statusbar.policy.DeviceProvisionedController;
 import com.android.systemui.statusbar.policy.DeviceProvisionedController.DeviceProvisionedListener;
 import com.android.systemui.statusbar.policy.EncryptionHelper;
 import com.android.systemui.telephony.TelephonyListenerManager;
+import com.android.systemui.tuner.TunerService;
 import com.android.systemui.util.CarrierConfigTracker;
 
-import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -102,12 +102,14 @@ import javax.inject.Inject;
 /** Platform implementation of the network controller. **/
 @SysUISingleton
 public class NetworkControllerImpl extends BroadcastReceiver
-        implements NetworkController, DemoMode, DataUsageController.NetworkNameProvider, Dumpable {
+        implements NetworkController, DemoMode, DataUsageController.NetworkNameProvider, Dumpable, TunerService.Tunable {
     // debug
     static final String TAG = "NetworkController";
     static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
     // additional diagnostics, but not logspew
     static final boolean CHATTY =  Log.isLoggable(TAG + "Chat", Log.DEBUG);
+
+    private static final String IMS_STATUS_CHANGED = "android.intent.action.IMS_REGISTRATION_CHANGED";
 
     private static final int EMERGENCY_NO_CONTROLLERS = 0;
     private static final int EMERGENCY_FIRST_CONTROLLER = 100;
@@ -131,11 +133,12 @@ public class NetworkControllerImpl extends BroadcastReceiver
     private final DemoModeController mDemoModeController;
     private final Object mLock = new Object();
     private final boolean mProviderModelBehavior;
-    private final boolean mProviderModelSetting;
     private Config mConfig;
     private final CarrierConfigTracker mCarrierConfigTracker;
     private final FeatureFlags mFeatureFlags;
     private final DumpManager mDumpManager;
+
+    private boolean mShowImsIcon = true;
 
     private TelephonyCallback.ActiveDataSubscriptionIdListener mPhoneStateListener;
     private int mActiveMobileDataSubscription = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
@@ -210,6 +213,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
                     mReceiverHandler.post(() -> handleConfigurationChanged());
                 }
             };
+
     /**
      * Construct this controller object and register for updates.
      */
@@ -226,19 +230,18 @@ public class NetworkControllerImpl extends BroadcastReceiver
             TelephonyManager telephonyManager,
             TelephonyListenerManager telephonyListenerManager,
             @Nullable WifiManager wifiManager,
-            NetworkScoreManager networkScoreManager,
             AccessPointControllerImpl accessPointController,
             DemoModeController demoModeController,
             CarrierConfigTracker carrierConfigTracker,
-            FeatureFlags featureFlags,
+            WifiStatusTrackerFactory trackerFactory,
             @Main Handler handler,
             InternetDialogFactory internetDialogFactory,
+            FeatureFlags featureFlags,
             DumpManager dumpManager) {
         this(context, connectivityManager,
                 telephonyManager,
                 telephonyListenerManager,
                 wifiManager,
-                networkScoreManager,
                 subscriptionManager,
                 Config.readConfig(context),
                 bgLooper,
@@ -251,10 +254,11 @@ public class NetworkControllerImpl extends BroadcastReceiver
                 broadcastDispatcher,
                 demoModeController,
                 carrierConfigTracker,
+                trackerFactory,
+                handler,
                 featureFlags,
                 dumpManager);
         mReceiverHandler.post(mRegisterListeners);
-        mMainHandler = handler;
         mInternetDialogFactory = internetDialogFactory;
     }
 
@@ -263,8 +267,9 @@ public class NetworkControllerImpl extends BroadcastReceiver
             TelephonyManager telephonyManager,
             TelephonyListenerManager telephonyListenerManager,
             WifiManager wifiManager,
-            NetworkScoreManager networkScoreManager,
-            SubscriptionManager subManager, Config config, Looper bgLooper,
+            SubscriptionManager subManager,
+            Config config,
+            Looper bgLooper,
             Executor bgExecutor,
             CallbackHandler callbackHandler,
             AccessPointControllerImpl accessPointController,
@@ -274,12 +279,15 @@ public class NetworkControllerImpl extends BroadcastReceiver
             BroadcastDispatcher broadcastDispatcher,
             DemoModeController demoModeController,
             CarrierConfigTracker carrierConfigTracker,
+            WifiStatusTrackerFactory trackerFactory,
+            @Main Handler handler,
             FeatureFlags featureFlags,
             DumpManager dumpManager
     ) {
         mContext = context;
         mTelephonyListenerManager = telephonyListenerManager;
         mConfig = config;
+        mMainHandler = handler;
         mReceiverHandler = new Handler(bgLooper);
         mBgLooper = bgLooper;
         mBgExecutor = bgExecutor;
@@ -302,6 +310,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
         // wifi
         mWifiManager = wifiManager;
 
+        Dependency.get(TunerService.class).addTunable(this, "ims");
         mLocale = mContext.getResources().getConfiguration().locale;
         mAccessPoints = accessPointController;
         mDataUsageController = dataUsageController;
@@ -314,9 +323,10 @@ public class NetworkControllerImpl extends BroadcastReceiver
                 notifyControllersMobileDataChanged();
             }
         });
+
         mWifiSignalController = new WifiSignalController(mContext, mHasMobileDataFeature,
-                mCallbackHandler, this, mWifiManager, mConnectivityManager, networkScoreManager,
-                mFeatureFlags);
+                mCallbackHandler, this, mWifiManager, trackerFactory,
+                mReceiverHandler);
 
         mEthernetSignalController = new EthernetSignalController(mContext, mCallbackHandler, this);
 
@@ -443,8 +453,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
         };
 
         mDemoModeController.addCallback(this);
-        mProviderModelBehavior = mFeatureFlags.isCombinedStatusBarSignalIconsEnabled();
-        mProviderModelSetting = mFeatureFlags.isProviderModelSettingEnabled();
+        mProviderModelBehavior = mFeatureFlags.isEnabled(Flags.COMBINED_STATUS_BAR_SIGNAL_ICONS);
 
         mDumpManager.registerDumpable(TAG, this);
     }
@@ -494,9 +503,8 @@ public class NetworkControllerImpl extends BroadcastReceiver
         filter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         filter.addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED);
         filter.addAction(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
-        if (InternetDialogUtil.isProviderModelEnabled(mContext)) {
-            filter.addAction(Settings.Panel.ACTION_INTERNET_CONNECTIVITY);
-        }
+        filter.addAction(Settings.Panel.ACTION_INTERNET_CONNECTIVITY);
+        filter.addAction(IMS_STATUS_CHANGED);
         mBroadcastDispatcher.registerReceiverWithHandler(this, filter, mReceiverHandler);
         mListening = true;
 
@@ -537,6 +545,14 @@ public class NetworkControllerImpl extends BroadcastReceiver
 
     public int getConnectedWifiLevel() {
         return mWifiSignalController.getState().level;
+    }
+
+    @Override
+    public void onTuningChanged(String key, String newValue) {
+        if (key.equals("ims")) {
+            mShowImsIcon = TunerService.parseIntegerSwitch(newValue, true);
+            updateImsIcon();
+        }
     }
 
     @Override
@@ -729,9 +745,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
                         TelephonyIcons.FLIGHT_MODE_ICON,
                         mContext.getString(R.string.accessibility_airplane_mode)));
         cb.setNoSims(mHasNoSubs, mSimDetected);
-        if (mProviderModelSetting) {
-            cb.setConnectivityStatus(mNoDefaultNetwork, !mInetCondition, mNoNetworksAvailable);
-        }
+        cb.setConnectivityStatus(mNoDefaultNetwork, !mInetCondition, mNoNetworksAvailable);
         mWifiSignalController.notifyListeners(cb);
         mEthernetSignalController.notifyListeners(cb);
         for (int i = 0; i < mMobileSignalControllers.size(); i++) {
@@ -741,7 +755,88 @@ public class NetworkControllerImpl extends BroadcastReceiver
                 mobileSignalController.refreshCallIndicator(cb);
             }
         }
+        if (mMobileSignalControllers.size() == 2) {
+            boolean volte1 = mMobileSignalControllers.valueAt(0).isVolteAvailable();
+            boolean volte2 = mMobileSignalControllers.valueAt(1).isVolteAvailable();
+            boolean vowifi1 = mMobileSignalControllers.valueAt(0).isVowifiAvailable();
+            boolean vowifi2 = mMobileSignalControllers.valueAt(1).isVowifiAvailable();
+            cb.setImsIcon(new ImsIconState((volte1 || volte2) && mShowImsIcon,
+                    (vowifi1 || vowifi2) && mShowImsIcon,
+                    getVolteResId(volte1, volte2),
+                    getVowifiResId(vowifi1, vowifi2),
+                    mContext.getString(com.android.internal.R.string.status_bar_ims)
+            ));
+        } else if (mMobileSignalControllers.size() == 1) {
+            boolean volte = mMobileSignalControllers.valueAt(0).isVolteAvailable();
+            boolean vowifi = mMobileSignalControllers.valueAt(0).isVowifiAvailable();
+            cb.setImsIcon(new ImsIconState(volte && mShowImsIcon,
+                    vowifi && mShowImsIcon,
+                    volte && mShowImsIcon ? R.drawable.stat_sys_volte : 0,
+                    vowifi && mShowImsIcon ? R.drawable.stat_sys_vowifi : 0,
+                    mContext.getString(com.android.internal.R.string.status_bar_ims)
+            ));
+        } else {
+            cb.setImsIcon(new ImsIconState(false,
+                    false,
+                    0,
+                    0,
+                    mContext.getString(com.android.internal.R.string.status_bar_ims)
+            ));
+        }
         mCallbackHandler.setListening(cb, true);
+    }
+
+    public void updateImsIcon() {
+        if (mMobileSignalControllers.size() == 2) {
+            boolean volte1 = mMobileSignalControllers.valueAt(0).isVolteAvailable();
+            boolean volte2 = mMobileSignalControllers.valueAt(1).isVolteAvailable();
+            boolean vowifi1 = mMobileSignalControllers.valueAt(0).isVowifiAvailable();
+            boolean vowifi2 = mMobileSignalControllers.valueAt(1).isVowifiAvailable();
+            mCallbackHandler.setImsIcon(new ImsIconState((volte1 || volte2) && mShowImsIcon,
+                    (vowifi1 || vowifi2) && mShowImsIcon,
+                    getVolteResId(volte1, volte2),
+                    getVowifiResId(vowifi1, vowifi2),
+                    mContext.getString(com.android.internal.R.string.status_bar_ims)
+            ));
+        } else if (mMobileSignalControllers.size() == 1) {
+            boolean volte = mMobileSignalControllers.valueAt(0).isVolteAvailable();
+            boolean vowifi = mMobileSignalControllers.valueAt(0).isVowifiAvailable();
+            mCallbackHandler.setImsIcon(new ImsIconState(volte && mShowImsIcon,
+                    vowifi && mShowImsIcon,
+                    (volte && mShowImsIcon) ? R.drawable.stat_sys_volte : 0,
+                    (vowifi && mShowImsIcon) ? R.drawable.stat_sys_vowifi : 0,
+                    mContext.getString(com.android.internal.R.string.status_bar_ims)
+            ));
+        } else {
+            mCallbackHandler.setImsIcon(new ImsIconState(false,
+                    false,
+                    0,
+                    0,
+                    mContext.getString(com.android.internal.R.string.status_bar_ims)
+            ));
+        }
+    }
+
+    private int getVolteResId(boolean volte1, boolean volte2) {
+        if (volte1 && volte2) {
+            return R.drawable.stat_sys_volte_slot12;
+        } else if (volte1) {
+            return R.drawable.stat_sys_volte_slot1;
+        } else if (volte2) {
+            return R.drawable.stat_sys_volte_slot2;
+        }
+        return 0;
+    }
+
+    private int getVowifiResId(boolean vowifi1, boolean vowifi2) {
+        if (vowifi1 && vowifi2) {
+            return R.drawable.stat_sys_vowifi_slot12;
+        } else if (vowifi1) {
+            return R.drawable.stat_sys_vowifi_slot1;
+        } else if (vowifi2) {
+            return R.drawable.stat_sys_vowifi_slot2;
+        }
+        return 0;
     }
 
     @Override
@@ -775,6 +870,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
         switch (action) {
             case ConnectivityManager.CONNECTIVITY_ACTION:
                 updateConnectivity();
+                updateImsIcon();
                 break;
             case Intent.ACTION_AIRPLANE_MODE_CHANGED:
                 refreshLocale();
@@ -819,6 +915,9 @@ public class NetworkControllerImpl extends BroadcastReceiver
                         mAccessPoints.canConfigMobileData(), mAccessPoints.canConfigWifi(),
                         null /* view */));
                 break;
+            case IMS_STATUS_CHANGED:
+                updateImsIcon();
+                break;
             default:
                 int subId = intent.getIntExtra(SubscriptionManager.EXTRA_SUBSCRIPTION_INDEX,
                         SubscriptionManager.INVALID_SUBSCRIPTION_ID);
@@ -855,6 +954,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
             return;
         }
         doUpdateMobileControllers();
+        updateImsIcon();
     }
 
     private void filterMobileSubscriptionInSameGroup(List<SubscriptionInfo> subscriptions) {
@@ -1058,6 +1158,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
         }
         mWifiSignalController.notifyListeners();
         mEthernetSignalController.notifyListeners();
+        updateImsIcon();
     }
 
     /**
@@ -1125,8 +1226,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
                 mobileSignalController.updateNoCallingState();
             }
             notifyAllListeners();
-        } else if (mProviderModelSetting) {
-            // TODO(b/191903788): Replace the flag name once the new flag is added.
+        } else {
             mNoDefaultNetwork = !mConnectedTransports.get(NetworkCapabilities.TRANSPORT_CELLULAR)
                     && !mConnectedTransports.get(NetworkCapabilities.TRANSPORT_WIFI)
                     && !mConnectedTransports.get(NetworkCapabilities.TRANSPORT_ETHERNET);
@@ -1149,7 +1249,7 @@ public class NetworkControllerImpl extends BroadcastReceiver
     }
 
     /** */
-    public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+    public void dump(PrintWriter pw, String[] args) {
         pw.println("NetworkController state:");
         pw.println("  mUserSetup=" + mUserSetup);
 

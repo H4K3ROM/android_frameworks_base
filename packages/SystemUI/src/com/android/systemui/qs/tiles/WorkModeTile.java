@@ -16,6 +16,9 @@
 
 package com.android.systemui.qs.tiles;
 
+import static android.app.admin.DevicePolicyResources.Strings.SystemUi.QS_WORK_PROFILE_LABEL;
+
+import android.app.admin.DevicePolicyManager;
 import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
@@ -39,11 +42,12 @@ import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.statusbar.phone.ManagedProfileController;
+import com.android.systemui.statusbar.policy.KeyguardStateController;
 
 import javax.inject.Inject;
 
 /** Quick settings tile: Work profile on/off */
-public class WorkModeTile extends QSTileImpl<BooleanState> implements
+public class WorkModeTile extends SecureQSTile<BooleanState> implements
         ManagedProfileController.Callback {
     private final Icon mIcon = ResourceIcon.get(R.drawable.stat_sys_managed_profile_status);
 
@@ -59,10 +63,11 @@ public class WorkModeTile extends QSTileImpl<BooleanState> implements
             StatusBarStateController statusBarStateController,
             ActivityStarter activityStarter,
             QSLogger qsLogger,
-            ManagedProfileController managedProfileController
+            ManagedProfileController managedProfileController,
+            KeyguardStateController keyguardStateController
     ) {
         super(host, backgroundLooper, mainHandler, falsingManager, metricsLogger,
-                statusBarStateController, activityStarter, qsLogger);
+                statusBarStateController, activityStarter, qsLogger, keyguardStateController);
         mProfileController = managedProfileController;
         mProfileController.observe(getLifecycle(), this);
     }
@@ -78,7 +83,11 @@ public class WorkModeTile extends QSTileImpl<BooleanState> implements
     }
 
     @Override
-    public void handleClick(@Nullable View view) {
+    protected void handleClick(@Nullable View view, boolean keyguardShowing) {
+        if (checkKeyguard(view, keyguardShowing)) {
+            return;
+        }
+
         mProfileController.setWorkModeEnabled(!mState.value);
     }
 
@@ -100,7 +109,9 @@ public class WorkModeTile extends QSTileImpl<BooleanState> implements
 
     @Override
     public CharSequence getTileLabel() {
-        return mContext.getString(R.string.quick_settings_work_mode_label);
+        DevicePolicyManager dpm = mContext.getSystemService(DevicePolicyManager.class);
+        return dpm.getResources().getString(QS_WORK_PROFILE_LABEL,
+                () -> mContext.getString(R.string.quick_settings_work_mode_label));
     }
 
     @Override

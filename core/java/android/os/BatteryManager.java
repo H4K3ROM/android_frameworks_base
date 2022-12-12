@@ -165,6 +165,41 @@ public class BatteryManager {
 
     /**
      * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
+     * boolean value to detect fast charging
+     * {@hide}
+     */
+    public static final String EXTRA_DASH_CHARGER = "dash_charger";
+
+    /**
+     * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
+     * boolean value to detect fast charging
+     * {@hide}
+     */
+    public static final String EXTRA_WARP_CHARGER = "warp_charger";
+
+    /**
+     * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
+     * boolean value to detect fast charging
+     * {@hide}
+     */
+    public static final String EXTRA_VOOC_CHARGER = "vooc_charger";
+
+    /**
+     * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
+     * boolean value to detect fast charging
+     * {@hide}
+     */
+    public static final String EXTRA_TURBO_POWER = "turbo_power";
+
+    /**
+     * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
+     * boolean value to indicate OEM fast charging
+     * {@hide}
+     */
+    public static final String EXTRA_OEM_FAST_CHARGER = "oem_fast_charger";
+
+    /**
+     * Extra for {@link android.content.Intent#ACTION_BATTERY_CHANGED}:
      * Contains a value that forces Moto Mod battery level `mod_level`
      * to overwrite the interal battery level and act as the device's
      * sole battery. This isn't used by any Mods we have come across.
@@ -238,11 +273,13 @@ public class BatteryManager {
     public static final int BATTERY_PLUGGED_USB = OsProtoEnums.BATTERY_PLUGGED_USB; // = 2
     /** Power source is wireless. */
     public static final int BATTERY_PLUGGED_WIRELESS = OsProtoEnums.BATTERY_PLUGGED_WIRELESS; // = 4
+    /** Power source is dock. */
+    public static final int BATTERY_PLUGGED_DOCK = OsProtoEnums.BATTERY_PLUGGED_DOCK; // = 8
 
     /** @hide */
     public static final int BATTERY_PLUGGED_ANY =
-            BATTERY_PLUGGED_AC | BATTERY_PLUGGED_USB | BATTERY_PLUGGED_WIRELESS |
-            BATTERY_PLUGGED_MOD;
+            BATTERY_PLUGGED_AC | BATTERY_PLUGGED_USB | BATTERY_PLUGGED_WIRELESS
+                    | BATTERY_PLUGGED_DOCK | BATTERY_PLUGGED_MOD;
 
     /**
      * Sent when the device's battery has started charging (or has reached full charge

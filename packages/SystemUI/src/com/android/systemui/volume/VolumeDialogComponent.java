@@ -22,12 +22,15 @@ import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.media.VolumePolicy;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.WindowManager.LayoutParams;
 
 import com.android.settingslib.applications.InterestingConfigChanges;
 import com.android.systemui.dagger.SysUISingleton;
 import com.android.systemui.demomode.DemoMode;
 import com.android.systemui.demomode.DemoModeController;
+import com.android.systemui.tristate.TriStateUiController;
+import com.android.systemui.tristate.TriStateUiControllerImpl;
 import com.android.systemui.keyguard.KeyguardViewMediator;
 import com.android.systemui.plugins.ActivityStarter;
 import com.android.systemui.plugins.PluginDependencyProvider;
@@ -37,7 +40,6 @@ import com.android.systemui.qs.tiles.DndTile;
 import com.android.systemui.statusbar.policy.ExtensionController;
 import com.android.systemui.tuner.TunerService;
 
-import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
@@ -49,7 +51,7 @@ import javax.inject.Inject;
  */
 @SysUISingleton
 public class VolumeDialogComponent implements VolumeComponent, TunerService.Tunable,
-        VolumeDialogControllerImpl.UserActivityListener{
+        VolumeDialogControllerImpl.UserActivityListener, TriStateUiController.UserActivityListener {
 
     public static final String VOLUME_DOWN_SILENT = "sysui_volume_down_silent";
     public static final String VOLUME_UP_SILENT = "sysui_volume_up_silent";
@@ -59,8 +61,14 @@ public class VolumeDialogComponent implements VolumeComponent, TunerService.Tuna
     public static final boolean DEFAULT_VOLUME_UP_TO_EXIT_SILENT = false;
     public static final boolean DEFAULT_DO_NOT_DISTURB_WHEN_SILENT = false;
 
+    private static final Intent ZEN_SETTINGS =
+            new Intent(Settings.ACTION_ZEN_MODE_SETTINGS);
+    private static final Intent ZEN_PRIORITY_SETTINGS =
+            new Intent(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS);
+
     protected final Context mContext;
     private final VolumeDialogControllerImpl mController;
+    private TriStateUiControllerImpl mTriStateController;
     private final InterestingConfigChanges mConfigChanges = new InterestingConfigChanges(
             ActivityInfo.CONFIG_FONT_SCALE | ActivityInfo.CONFIG_LOCALE
             | ActivityInfo.CONFIG_ASSETS_PATHS | ActivityInfo.CONFIG_UI_MODE);
@@ -90,6 +98,8 @@ public class VolumeDialogComponent implements VolumeComponent, TunerService.Tuna
         mActivityStarter = activityStarter;
         mController = volumeDialogController;
         mController.setUserActivityListener(this);
+        boolean hasAlertSlider = mContext.getResources().
+                getBoolean(com.android.internal.R.bool.config_hasAlertSlider);
         // Allow plugins to reference the VolumeDialogController.
         pluginDependencyProvider.allowPluginDependency(VolumeDialogController.class);
         extensionController.newExtension(VolumeDialog.class)
@@ -101,6 +111,13 @@ public class VolumeDialogComponent implements VolumeComponent, TunerService.Tuna
                     }
                     mDialog = dialog;
                     mDialog.init(LayoutParams.TYPE_VOLUME_OVERLAY, mVolumeDialogCallback);
+                    if (hasAlertSlider) {
+                        if (mTriStateController != null) {
+                            mTriStateController.destroy();
+                        }
+                        mTriStateController = new TriStateUiControllerImpl(mContext);
+                        mTriStateController.init(LayoutParams.TYPE_VOLUME_OVERLAY, this);
+                    }
                 }).build();
         applyConfiguration();
         tunerService.addTunable(this, VOLUME_DOWN_SILENT, VOLUME_UP_SILENT,
@@ -147,7 +164,7 @@ public class VolumeDialogComponent implements VolumeComponent, TunerService.Tuna
 
     private void applyConfiguration() {
         mController.setVolumePolicy(mVolumePolicy);
-        mController.showDndTile(true);
+        mController.showDndTile();
     }
 
     @Override
@@ -181,22 +198,27 @@ public class VolumeDialogComponent implements VolumeComponent, TunerService.Tuna
     }
 
     @Override
-    public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+    public void dump(PrintWriter pw, String[] args) {
     }
 
     private void startSettings(Intent intent) {
         mActivityStarter.startActivity(intent, true /* onlyProvisioned */, true /* dismissShade */);
     }
 
+    @Override
+    public void onTriStateUserActivity() {
+        onUserActivity();
+    }
+
     private final VolumeDialogImpl.Callback mVolumeDialogCallback = new VolumeDialogImpl.Callback() {
         @Override
         public void onZenSettingsClicked() {
-            startSettings(ZenModePanel.ZEN_SETTINGS);
+            startSettings(ZEN_SETTINGS);
         }
 
         @Override
         public void onZenPrioritySettingsClicked() {
-            startSettings(ZenModePanel.ZEN_PRIORITY_SETTINGS);
+            startSettings(ZEN_PRIORITY_SETTINGS);
         }
     };
 

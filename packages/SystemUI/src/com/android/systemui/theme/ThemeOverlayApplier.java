@@ -31,12 +31,12 @@ import androidx.annotation.VisibleForTesting;
 
 import com.android.systemui.Dumpable;
 import com.android.systemui.dagger.SysUISingleton;
+import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.dump.DumpManager;
 
 import com.google.android.collect.Lists;
 import com.google.android.collect.Sets;
 
-import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -45,6 +45,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
+
+import javax.inject.Inject;
+import javax.inject.Named;
 
 /**
  * Responsible for orchestrating overlays, based on user preferences and other inputs from
@@ -66,6 +69,8 @@ public class ThemeOverlayApplier implements Dumpable {
             "android.theme.customization.accent_color";
     static final String OVERLAY_CATEGORY_SYSTEM_PALETTE =
             "android.theme.customization.system_palette";
+    static final String OVERLAY_CATEGORY_THEME_STYLE =
+            "android.theme.customization.theme_style";
 
     static final String OVERLAY_COLOR_SOURCE = "android.theme.customization.color_source";
 
@@ -108,24 +113,13 @@ public class ThemeOverlayApplier implements Dumpable {
      */
     static final List<String> THEME_CATEGORIES = Lists.newArrayList(
             OVERLAY_CATEGORY_SYSTEM_PALETTE,
-            OVERLAY_CATEGORY_ICON_LAUNCHER,
-            OVERLAY_CATEGORY_SHAPE,
-            OVERLAY_CATEGORY_FONT,
-            OVERLAY_CATEGORY_ACCENT_COLOR,
-            OVERLAY_CATEGORY_ICON_ANDROID,
-            OVERLAY_CATEGORY_ICON_SYSUI,
-            OVERLAY_CATEGORY_ICON_SETTINGS,
-            OVERLAY_CATEGORY_ICON_THEME_PICKER);
+            OVERLAY_CATEGORY_ACCENT_COLOR);
 
     /* Categories that need to be applied to the current user as well as the system user. */
     @VisibleForTesting
     static final Set<String> SYSTEM_USER_CATEGORIES = Sets.newHashSet(
             OVERLAY_CATEGORY_SYSTEM_PALETTE,
-            OVERLAY_CATEGORY_ACCENT_COLOR,
-            OVERLAY_CATEGORY_FONT,
-            OVERLAY_CATEGORY_SHAPE,
-            OVERLAY_CATEGORY_ICON_ANDROID,
-            OVERLAY_CATEGORY_ICON_SYSUI);
+            OVERLAY_CATEGORY_ACCENT_COLOR);
 
     /* Allowed overlay categories for each target package. */
     private final Map<String, Set<String>> mTargetPackageToCategories = new ArrayMap<>();
@@ -133,39 +127,22 @@ public class ThemeOverlayApplier implements Dumpable {
     private final Map<String, String> mCategoryToTargetPackage = new ArrayMap<>();
     private final OverlayManager mOverlayManager;
     private final Executor mBgExecutor;
-    private final Executor mMainExecutor;
     private final String mLauncherPackage;
     private final String mThemePickerPackage;
 
+    @Inject
     public ThemeOverlayApplier(OverlayManager overlayManager,
-            Executor bgExecutor,
-            Executor mainExecutor,
-            String launcherPackage, String themePickerPackage, DumpManager dumpManager) {
+            @Background Executor bgExecutor,
+            @Named(ThemeModule.LAUNCHER_PACKAGE) String launcherPackage,
+            @Named(ThemeModule.THEME_PICKER_PACKAGE) String themePickerPackage,
+            DumpManager dumpManager) {
         mOverlayManager = overlayManager;
         mBgExecutor = bgExecutor;
-        mMainExecutor = mainExecutor;
         mLauncherPackage = launcherPackage;
         mThemePickerPackage = themePickerPackage;
         mTargetPackageToCategories.put(ANDROID_PACKAGE, Sets.newHashSet(
-                OVERLAY_CATEGORY_SYSTEM_PALETTE, OVERLAY_CATEGORY_ACCENT_COLOR,
-                OVERLAY_CATEGORY_FONT, OVERLAY_CATEGORY_SHAPE,
-                OVERLAY_CATEGORY_ICON_ANDROID));
-        mTargetPackageToCategories.put(SYSUI_PACKAGE,
-                Sets.newHashSet(OVERLAY_CATEGORY_ICON_SYSUI));
-        mTargetPackageToCategories.put(SETTINGS_PACKAGE,
-                Sets.newHashSet(OVERLAY_CATEGORY_ICON_SETTINGS));
-        mTargetPackageToCategories.put(mLauncherPackage,
-                Sets.newHashSet(OVERLAY_CATEGORY_ICON_LAUNCHER));
-        mTargetPackageToCategories.put(mThemePickerPackage,
-                Sets.newHashSet(OVERLAY_CATEGORY_ICON_THEME_PICKER));
+                OVERLAY_CATEGORY_SYSTEM_PALETTE, OVERLAY_CATEGORY_ACCENT_COLOR));
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ACCENT_COLOR, ANDROID_PACKAGE);
-        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_FONT, ANDROID_PACKAGE);
-        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_SHAPE, ANDROID_PACKAGE);
-        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_ANDROID, ANDROID_PACKAGE);
-        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_SYSUI, SYSUI_PACKAGE);
-        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_SETTINGS, SETTINGS_PACKAGE);
-        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_LAUNCHER, mLauncherPackage);
-        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_THEME_PICKER, mThemePickerPackage);
 
         dumpManager.registerDumpable(TAG, this);
     }
@@ -276,7 +253,7 @@ public class ThemeOverlayApplier implements Dumpable {
      * @inherit
      */
     @Override
-    public void dump(@NonNull FileDescriptor fd, @NonNull PrintWriter pw, @NonNull String[] args) {
+    public void dump(@NonNull PrintWriter pw, @NonNull String[] args) {
         pw.println("mTargetPackageToCategories=" + mTargetPackageToCategories);
         pw.println("mCategoryToTargetPackage=" + mCategoryToTargetPackage);
     }
